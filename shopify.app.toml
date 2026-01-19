@@ -2,7 +2,7 @@
 
 client_id = "466d1063c75d0584538920e0e227cab5"
 name = "subscription-manager"
-application_url = "https://example.com"
+application_url = "https://subscription-manager-5ask.onrender.com"
 embedded = true
 
 [build]
@@ -26,4 +26,8 @@ optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+"https://subscription-manager-5ask.onrender.com/auth/callback",
+"https://subscription-manager-5ask.onrender.com/auth/shopify/callback",
+"https://subscription-manager-5ask.onrender.com/api/auth/callback" 
+]
