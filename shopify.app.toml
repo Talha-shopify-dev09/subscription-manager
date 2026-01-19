@@ -25,6 +25,11 @@ scopes = "read_products,write_products,read_purchase_options,write_purchase_opti
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
+[app_proxy]
+url = "https://subscription-manager-5ask.onrender.com/"
+subpath = "subscription-manager"
+prefix = "apps"
+
 [auth]
 redirect_urls = [
 "https://subscription-manager-5ask.onrender.com/auth/callback",

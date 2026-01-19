@@ -23,12 +23,12 @@
 (async function() {
   const container = document.getElementById('subscription-widget-{{ product.id }}');
   const productId = '{{ product.id }}';
+  const variantId = {{ product.selected_or_first_available_variant.id }};
 
-  // 1. Fetch Subscription Data
   try {
+    // 1. Fetch Subscription Data
     const response = await fetch(`/apps/subscription-manager/api/subscription/${productId}`);
     
-    // If request fails or product has no plans, hide everything and stop
     if (!response.ok) {
         container.style.display = 'none';
         return;
@@ -36,7 +36,7 @@
 
     const data = await response.json();
     
-    // If no subscription data, hide everything and stop
+    // If no subscription or disabled, hide widget
     if (!data.subscription || !data.subscription.enabled) {
       container.style.display = 'none';
       return;
@@ -44,86 +44,107 @@
 
     // 2. Prepare Data
     const sub = data.subscription;
-    const planIds = sub.shopifyPlanIds || {};
-    // Calculate discounts for display
+    const planIds = sub.shopifyPlanIds || {}; 
     const price = parseFloat('{{ product.price | money_without_currency | remove: "," }}');
+
+    // Calculate discounted prices
     const p1 = (price * (1 - sub.oneMonthDiscount/100)).toFixed(2);
     const p2 = (price * (1 - sub.twoMonthDiscount/100)).toFixed(2);
     const p3 = (price * (1 - sub.threeMonthDiscount/100)).toFixed(2);
 
-    // 3. Render HTML (With The Button)
+    // 3. Render HTML
     container.innerHTML = `
       <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin: 20px 0; background: #fff;">
         <h3 style="margin-top:0;">${ '{{ section.settings.heading }}' }</h3>
         
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px;">
            <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px;">
-             <input type="radio" name="sub_plan" value="${planIds['1']}" checked>
+             <input type="radio" name="sub_plan" value="${planIds['1'] || ''}" checked>
              <div style="font-weight:bold;">1 Month</div>
              <div>${p1}</div>
            </label>
            
            <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px; background:#f0f9ff; border-color:#0070f3;">
-             <input type="radio" name="sub_plan" value="${planIds['2']}">
+             <input type="radio" name="sub_plan" value="${planIds['2'] || ''}">
              <div style="font-weight:bold;">2 Months</div>
              <div>${p2}</div>
            </label>
            
            <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px;">
-             <input type="radio" name="sub_plan" value="${planIds['3']}">
+             <input type="radio" name="sub_plan" value="${planIds['3'] || ''}">
              <div style="font-weight:bold;">3 Months</div>
              <div>${p3}</div>
            </label>
         </div>
 
-        <button id="btn-add-sub" style="
-            width: 100%; 
-            background-color: #000; 
-            color: #fff; 
-            padding: 15px; 
-            font-size: 16px; 
-            font-weight: bold; 
-            border: none; 
-            cursor: pointer; 
-            display: block;">
+        <button id="btn-add-sub" style="width: 100%; background-color: #000; color: #fff; padding: 15px; font-size: 16px; font-weight: bold; border: none; cursor: pointer;">
             Add Subscription to Cart
         </button>
+        <p id="error-msg" style="color:red; display:none; margin-top:10px; text-align:center;"></p>
       </div>
     `;
 
     // 4. Button Click Logic
     document.getElementById('btn-add-sub').addEventListener('click', async function(e) {
         const btn = e.target;
+        const errorMsg = document.getElementById('error-msg');
         const selected = container.querySelector('input[name="sub_plan"]:checked');
         
+        errorMsg.style.display = 'none';
+
         if(!selected || !selected.value) {
-            alert('Please select a plan');
+            alert('Please select a plan.');
             return;
         }
 
-        // Change text to show it's working
+        // --- THE FIX: Convert String ID to Integer ---
+        const planId = parseInt(selected.value);
+
+        if (isNaN(planId)) {
+             errorMsg.innerText = "Error: Invalid Plan ID format.";
+             errorMsg.style.display = 'block';
+             return;
+        }
+
         btn.innerText = "Adding...";
         
-        // Add to Shopify Cart
-        await fetch('/cart/add.js', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                items: [{
-                    id: {{ product.selected_or_first_available_variant.id }},
-                    quantity: 1,
-                    selling_plan: selected.value
-                }]
-            })
-        });
+        const payload = {
+            items: [{
+                id: variantId,
+                quantity: 1,
+                selling_plan: planId // Sending Number (Integer) now
+            }]
+        };
 
-        // Go to Cart
-        window.location.href = '/cart';
+        try {
+            const cartResponse = await fetch('/cart/add.js', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+
+            const cartData = await cartResponse.json();
+
+            if (!cartResponse.ok) {
+                console.error("Cart Error:", cartData);
+                btn.innerText = "Try Again";
+                errorMsg.innerText = `Error: ${cartData.description || cartData.message}`;
+                errorMsg.style.display = 'block';
+                return;
+            }
+
+            // Success!
+            window.location.href = '/cart';
+
+        } catch (err) {
+            console.error("Network Error", err);
+            btn.innerText = "Error";
+        }
     });
 
   } catch (err) {
     console.error("Widget Error", err);
-    container.style.display = 'none'; // Hide if error
+    container.style.display = 'none';
   }
 })();
 </script>
