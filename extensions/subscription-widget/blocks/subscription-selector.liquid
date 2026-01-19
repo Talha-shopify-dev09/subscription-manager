@@ -22,31 +22,43 @@
 </div>
 
 <style>
-/* --- SAME CSS AS BEFORE (No Changes) --- */
+/* --- WIDGET STYLES --- */
 .subscription-widget { margin: 24px 0; padding: 20px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; }
 .subscription-loading { text-align: center; color: #6b7280; padding: 20px; }
+
+/* Hide options initially */
 .subscription-options { display: none; }
 .subscription-options.loaded { display: block; }
+
+/* Header */
 .subscription-header { margin-bottom: 20px; }
 .subscription-header h3 { font-size: 20px; font-weight: 600; margin: 0 0 8px 0; color: #111827; }
 .subscription-header p { font-size: 14px; color: #6b7280; margin: 0; }
+
+/* Plan Grid */
 .subscription-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
 @media (max-width: 768px) { .subscription-plans { grid-template-columns: 1fr; } }
+
+/* Cards */
 .plan-option { position: relative; cursor: pointer; }
 .plan-option input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
 .plan-card { padding: 16px; background: white; border: 2px solid #e5e7eb; border-radius: 10px; text-align: center; transition: all 0.2s ease; position: relative; min-height: 120px; display: flex; flex-direction: column; justify-content: center; }
+
+/* Selected State */
 .plan-option input[type="radio"]:checked + .plan-card { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
 .plan-option:hover .plan-card { border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+
+/* Text Styles */
 .plan-badge { position: absolute; top: -10px; right: 10px; background: #10b981; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
 .plan-duration { font-weight: 600; font-size: 16px; margin-bottom: 8px; color: #374151; }
 .plan-price { font-size: 28px; font-weight: 700; color: #111827; margin-bottom: 4px; }
-.plan-original-price { font-size: 14px; color: #9ca3af; text-decoration: line-through; margin-bottom: 4px; }
 .plan-save { color: #10b981; font-size: 13px; font-weight: 600; margin-top: 4px; }
+
+/* Note Box */
 .subscription-note { background: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-top: 16px; font-size: 13px; color: #92400e; line-height: 1.5; }
-.subscription-note strong { display: block; margin-bottom: 4px; color: #78350f; }
 .error-message { background: #fee; border: 1px solid #fcc; color: #c33; padding: 12px; border-radius: 8px; text-align: center; }
 
-/* --- NEW CSS FOR CUSTOM BUTTON --- */
+/* --- BUTTON STYLES --- */
 .app-add-btn {
   width: 100%;
   background-color: #000;
@@ -61,6 +73,8 @@
   transition: opacity 0.2s;
 }
 .app-add-btn:hover { opacity: 0.9; }
+
+/* Utility to hide theme button */
 .hidden-theme-btn { display: none !important; }
 </style>
 
@@ -70,31 +84,33 @@
   const container = document.getElementById('subscription-widget-{{ product.id }}');
   const loadingDiv = container.querySelector('.subscription-loading');
   
-  // Helper to hide Theme Button
+  // Helper: Hides the default Shopify Add to Cart button
   function hideThemeButton() {
     const themeForms = document.querySelectorAll('form[action*="/cart/add"]');
     themeForms.forEach(form => {
-      const btn = form.querySelector('[type="submit"], .product-form__submit, .add-to-cart');
+      const btn = form.querySelector('[type="submit"], .product-form__submit, .add-to-cart, .shopify-payment-button');
       if (btn) btn.classList.add('hidden-theme-btn');
     });
   }
 
   try {
     // 1. Fetch Data
+    // NOTE: Using the Proxy Path 'subscription-manager' exactly as configured in Dashboard
     const numericId = productId.toString();
     const response = await fetch(`/apps/subscription-manager/api/subscription/${numericId}`);
     
     if (!response.ok) throw new Error('Failed to load subscription data');
     const data = await response.json();
+    
     loadingDiv.style.display = 'none';
 
-    // 2. If no subscription, show nothing (and keep theme button visible)
+    // 2. If no subscription, HIDE widget and STOP (Theme button stays visible)
     if (!data.subscription || !data.subscription.enabled) {
       container.style.display = 'none';
       return;
     }
     
-    // 3. If subscription exists, HIDE THEME BUTTON
+    // 3. If subscription exists, Show Widget & Hide Theme Button
     hideThemeButton();
 
     const sub = data.subscription;
@@ -108,18 +124,17 @@
       3: (originalPrice - (originalPrice * sub.threeMonthDiscount / 100)).toFixed(2)
     };
 
-    // 4. Render Widget WITH Custom Button
+    // 4. Render Widget HTML (Including the Button)
     container.innerHTML = `
       <div class="subscription-options loaded">
         <div class="subscription-header">
-          <h3>Subscribe & Save</h3>
+          <h3>${ '{{ section.settings.heading }}' || 'Subscribe & Save' }</h3>
           <p>Choose your plan:</p>
         </div>
         
         <div class="subscription-plans">
           <label class="plan-option">
-            <input type="radio" name="subscription-plan" value="1" checked
-                   data-shopify-id="${planIds['1'] || ''}">
+            <input type="radio" name="subscription-plan" value="1" checked data-shopify-id="${planIds['1'] || ''}">
             <div class="plan-card">
               <div class="plan-duration">1 Month</div>
               <div class="plan-price">${prices[1]}</div>
@@ -128,8 +143,7 @@
           </label>
           
           <label class="plan-option">
-            <input type="radio" name="subscription-plan" value="2"
-                   data-shopify-id="${planIds['2'] || ''}">
+            <input type="radio" name="subscription-plan" value="2" data-shopify-id="${planIds['2'] || ''}">
             <div class="plan-card">
               <div class="plan-badge">Popular</div>
               <div class="plan-duration">2 Months</div>
@@ -139,8 +153,7 @@
           </label>
           
           <label class="plan-option">
-            <input type="radio" name="subscription-plan" value="3"
-                   data-shopify-id="${planIds['3'] || ''}">
+            <input type="radio" name="subscription-plan" value="3" data-shopify-id="${planIds['3'] || ''}">
             <div class="plan-card">
               <div class="plan-duration">3 Months</div>
               <div class="plan-price">${prices[3]}</div>
@@ -171,7 +184,10 @@
         return;
       }
 
+      // Add loading state
+      const originalText = addBtn.innerText;
       addBtn.innerText = "Adding...";
+      addBtn.style.opacity = "0.7";
       
       try {
         await fetch('/cart/add.js', {
@@ -185,17 +201,22 @@
             }]
           })
         });
+        
         // Redirect to cart
         window.location.href = '/cart';
       } catch (err) {
         console.error(err);
         addBtn.innerText = "Error - Try Again";
+        setTimeout(() => {
+          addBtn.innerText = originalText;
+          addBtn.style.opacity = "1";
+        }, 2000);
       }
     });
 
   } catch (error) {
     console.error('Widget Error:', error);
-    loadingDiv.innerHTML = `<div class="error-message">Error loading subscription options</div>`;
+    loadingDiv.innerHTML = `<div class="error-message">Unable to load options. Refresh page.</div>`;
   }
 })();
 </script>
