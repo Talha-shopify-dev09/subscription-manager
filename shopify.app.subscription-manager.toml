@@ -1,8 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "6b168c1a4cd97fcd089199c7c7a835ce"
+client_id = "466d1063c75d0584538920e0e227cab5"
 name = "subscription-manager"
-application_url = "https://example.com"
+application_url = "https://subscription-manager-5ask.onrender.com"
 embedded = true
 
 [build]
@@ -16,4 +16,8 @@ api_version = "2026-04"
 scopes = "read_products,read_purchase_options,write_products,write_purchase_options"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+"https://subscription-manager-5ask.onrender.com/auth/callback",
+"https://subscription-manager-5ask.onrender.com/auth/shopify/callback",
+"https://subscription-manager-5ask.onrender.com/api/auth/callback"
+ ]
