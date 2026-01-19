@@ -2,22 +2,171 @@
 {
   "name": "Subscription Selector",
   "target": "section",
-  "stylesheet": "subscription-selector.css",
-  "javascript": "subscription-selector.js",
   "settings": [
     {
       "type": "text",
       "id": "heading",
       "label": "Heading",
       "default": "Subscribe & Save"
+    },
+    {
+      "type": "color",
+      "id": "accent_color",
+      "label": "Highlight Color",
+      "default": "#000000"
     }
   ]
 }
 {% endschema %}
 
-<div class="subscription-widget" id="subscription-widget-{{ product.id }}">
-  <p class="sub-loading" style="padding:10px; color:#666;">Loading subscription...</p>
+<style>
+  .sw-container {
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 24px 0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    font-family: inherit;
+  }
+
+  .sw-title {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #111827;
+    text-align: center;
+  }
+
+  /* Grid Layout: 3 columns on desktop, 1 on mobile */
+  .sw-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 600px) {
+    .sw-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Plan Card Styles */
+  .sw-label {
+    position: relative;
+    cursor: pointer;
+  }
+  
+  .sw-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .sw-card {
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px 10px;
+    text-align: center;
+    transition: all 0.2s ease;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: #fff;
+  }
+
+  /* Hover State */
+  .sw-label:hover .sw-card {
+    border-color: #9ca3af;
+    transform: translateY(-2px);
+  }
+
+  /* Selected State */
+  .sw-input:checked + .sw-card {
+    border-color: {{ section.settings.accent_color }};
+    background-color: #f9fafb;
+    box-shadow: 0 0 0 1px {{ section.settings.accent_color }};
+  }
+
+  /* Typography */
+  .sw-duration {
+    font-weight: 700;
+    font-size: 16px;
+    display: block;
+    margin-bottom: 4px;
+    color: #374151;
+  }
+  
+  .sw-price {
+    font-size: 15px;
+    color: #111827;
+  }
+
+  .sw-discount {
+    font-size: 12px;
+    color: #10b981; /* Green for savings */
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  /* "Best Value" Badge */
+  .sw-badge {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: {{ section.settings.accent_color }};
+    color: #fff;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 12px;
+    white-space: nowrap;
+    z-index: 2;
+  }
+
+  /* Button */
+  .sw-btn {
+    width: 100%;
+    background-color: {{ section.settings.accent_color }};
+    color: #fff;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .sw-btn:hover { opacity: 0.9; }
+  
+  /* Error Message */
+  .sw-error {
+    color: #ef4444;
+    font-size: 13px;
+    margin-top: 10px;
+    text-align: center;
+    display: none;
+    background: #fef2f2;
+    padding: 8px;
+    border-radius: 4px;
+  }
+</style>
+
+<div id="subscription-widget-{{ product.id }}">
+  <div style="padding: 20px; text-align: center; color: #6b7280; background: #f9fafb; border-radius: 8px;">
+    <svg style="animation: spin 1s linear infinite; height: 20px; width: 20px; margin-right: 8px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle style="opacity: 0.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path style="opacity: 0.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+    </svg>
+    Loading options...
+  </div>
 </div>
+
+<style>
+@keyframes spin { 100% { transform: rotate(360deg); } }
+</style>
 
 <script>
 (async function() {
@@ -25,12 +174,11 @@
   const productId = '{{ product.id }}';
   const variantId = {{ product.selected_or_first_available_variant.id }};
 
-  // Helper to extract number from "gid://shopify/SellingPlan/12345"
   function cleanId(id) {
     if (!id) return null;
     const str = id.toString();
     const parts = str.split('/');
-    return parts[parts.length - 1]; // Gets the last part (the number)
+    return parts[parts.length - 1]; 
   }
 
   try {
@@ -45,53 +193,60 @@
 
     const sub = data.subscription;
     
-    // Parse Plan IDs safely
     let planIds = sub.shopifyPlanIds;
     if (typeof planIds === 'string') {
         try { planIds = JSON.parse(planIds); } catch (e) { planIds = {}; }
     }
     planIds = planIds || {};
 
-    // DEBUG: Print IDs to console so you can see them
-    console.log("Raw Plan IDs from DB:", planIds);
-
     const price = parseFloat('{{ product.price | money_without_currency | remove: "," }}');
     const p1 = (price * (1 - sub.oneMonthDiscount/100)).toFixed(2);
     const p2 = (price * (1 - sub.twoMonthDiscount/100)).toFixed(2);
     const p3 = (price * (1 - sub.threeMonthDiscount/100)).toFixed(2);
 
+    // 2. RENDER THE BEAUTIFUL HTML
     container.innerHTML = `
-      <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin: 20px 0; background: #fff;">
-        <h3 style="margin-top:0;">${ '{{ section.settings.heading }}' }</h3>
+      <div class="sw-container">
+        <h3 class="sw-title">${ '{{ section.settings.heading }}' }</h3>
         
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px;">
-           <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px;">
-             <input type="radio" name="sub_plan" value="${cleanId(planIds['1']) || ''}" checked>
-             <div style="font-weight:bold;">1 Month</div>
-             <div>${p1}</div>
+        <div class="sw-grid">
+           <label class="sw-label">
+             <input type="radio" class="sw-input" name="sub_plan" value="${cleanId(planIds['1']) || ''}" checked>
+             <div class="sw-card">
+               <span class="sw-duration">1 Month</span>
+               <span class="sw-price">${p1}</span>
+               <div class="sw-discount">Save ${sub.oneMonthDiscount}%</div>
+             </div>
            </label>
            
-           <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px; background:#f0f9ff; border-color:#0070f3;">
-             <input type="radio" name="sub_plan" value="${cleanId(planIds['2']) || ''}">
-             <div style="font-weight:bold;">2 Months</div>
-             <div>${p2}</div>
+           <label class="sw-label">
+             <input type="radio" class="sw-input" name="sub_plan" value="${cleanId(planIds['2']) || ''}">
+             <div class="sw-card">
+               <span class="sw-badge">Best Value</span>
+               <span class="sw-duration">2 Months</span>
+               <span class="sw-price">${p2}</span>
+               <div class="sw-discount">Save ${sub.twoMonthDiscount}%</div>
+             </div>
            </label>
            
-           <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px;">
-             <input type="radio" name="sub_plan" value="${cleanId(planIds['3']) || ''}">
-             <div style="font-weight:bold;">3 Months</div>
-             <div>${p3}</div>
+           <label class="sw-label">
+             <input type="radio" class="sw-input" name="sub_plan" value="${cleanId(planIds['3']) || ''}">
+             <div class="sw-card">
+               <span class="sw-duration">3 Months</span>
+               <span class="sw-price">${p3}</span>
+               <div class="sw-discount">Save ${sub.threeMonthDiscount}%</div>
+             </div>
            </label>
         </div>
 
-        <button id="btn-add-sub" style="width: 100%; background-color: #000; color: #fff; padding: 15px; font-size: 16px; font-weight: bold; border: none; cursor: pointer;">
+        <button id="btn-add-sub" class="sw-btn">
             Add Subscription to Cart
         </button>
-        <p id="error-msg" style="color:red; display:none; margin-top:10px; text-align:center;"></p>
-        <p style="font-size:10px; color:#999; text-align:center;">Debug: ID 1 is ${planIds['1'] || 'MISSING'}</p>
+        <p id="error-msg" class="sw-error"></p>
       </div>
     `;
 
+    // 3. EVENT LISTENER
     document.getElementById('btn-add-sub').addEventListener('click', async function(e) {
         const btn = e.target;
         const errorMsg = document.getElementById('error-msg');
@@ -100,7 +255,7 @@
         errorMsg.style.display = 'none';
 
         if(!selected || !selected.value) {
-            errorMsg.innerText = "Error: Plan ID is missing. Please Edit & Save the plan in App Admin.";
+            errorMsg.innerText = "Error: Plan ID missing. Please edit app settings.";
             errorMsg.style.display = 'block';
             return;
         }
@@ -108,12 +263,14 @@
         const planId = parseInt(selected.value);
 
         if (isNaN(planId)) {
-             errorMsg.innerText = "Error: Invalid Plan ID format (NaN).";
+             errorMsg.innerText = "Error: Invalid Plan ID format.";
              errorMsg.style.display = 'block';
              return;
         }
 
+        const originalText = btn.innerText;
         btn.innerText = "Adding...";
+        btn.style.opacity = "0.7";
         
         try {
             const cartResponse = await fetch('/cart/add.js', {
@@ -131,7 +288,8 @@
             const cartData = await cartResponse.json();
 
             if (!cartResponse.ok) {
-                btn.innerText = "Try Again";
+                btn.innerText = originalText;
+                btn.style.opacity = "1";
                 errorMsg.innerText = `Error: ${cartData.description || "Issue adding to cart"}`;
                 errorMsg.style.display = 'block';
                 return;
@@ -141,6 +299,7 @@
         } catch (err) {
             console.error(err);
             btn.innerText = "Error";
+            setTimeout(() => { btn.innerText = originalText; btn.style.opacity = "1"; }, 2000);
         }
     });
 
