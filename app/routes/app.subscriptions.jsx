@@ -19,21 +19,22 @@ import {
   Modal,
   FormLayout,
   EmptyState,
-  Divider
+  Divider,
+  Box,
+  Scrollable
 } from "@shopify/polaris";
+import { DeleteIcon, PlusIcon } from "@shopify/polaris-icons";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import { TitleBar } from "@shopify/app-bridge-react";
-import {
-  getAllSubscriptions,
-  createSubscription,
-  deleteSubscription,
-  toggleSubscription
-} from "../models/subscriptions.server";
+import db from "../db.server"; // Import Prisma DB directly for safety
 
-// --- LOADER: Fetch Products & Collections ---
+// --- LOADER: Fetch Products & Collections & Subscriptions ---
 export async function loader({ request }) {
-  const { admin } = await authenticate.admin(request);
+  await authenticate.admin(request);
   
+  // 1. Fetch Products & Collections from Shopify
+  // (Keeping your existing GraphQL query)
+  const { admin } = await authenticate.admin(request);
   const response = await admin.graphql(
     `#graphql
       query {
@@ -42,9 +43,7 @@ export async function loader({ request }) {
             node {
               id
               title
-              priceRangeV2 {
-                minVariantPrice { amount }
-              }
+              priceRangeV2 { minVariantPrice { amount } }
             }
           }
         }
@@ -75,11 +74,12 @@ export async function loader({ request }) {
     productsCount: edge.node.productsCount.count
   }));
   
-  return { 
-    subscriptions: await getAllSubscriptions(),
-    products,
-    collections
-  };
+  // 2. Fetch Subscriptions from DB
+  const subscriptions = await db.subscription.findMany({
+    orderBy: { createdAt: 'desc' }
+  });
+  
+  return { subscriptions, products, collections };
 }
 
 // --- ACTION: Handle Create/Delete logic ---
@@ -110,64 +110,66 @@ export async function action({ request }) {
       }
     }
 
-    await deleteSubscription(id);
+    await db.subscription.delete({ where: { id } });
     return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
   }
 
   // 2. TOGGLE STATUS
   if (actionType === "toggle") {
     const id = formData.get("id");
-    await toggleSubscription(id);
+    const sub = await db.subscription.findUnique({ where: { id } });
+    await db.subscription.update({
+      where: { id },
+      data: { enabled: !sub.enabled }
+    });
     return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
   }
 
-  // 3. CREATE SUBSCRIPTION
+  // 3. CREATE SUBSCRIPTION (UPDATED FOR DYNAMIC PLANS)
   if (actionType === "create") {
     const type = formData.get("type");
     const targetId = formData.get("targetId");
     const targetTitle = formData.get("targetTitle");
     const originalPrice = formData.get("originalPrice");
     
-    const discounts = {
-      1: formData.get("oneMonthDiscount") || "0",
-      2: formData.get("twoMonthDiscount") || "0",
-      3: formData.get("threeMonthDiscount") || "0"
-    };
+    // Parse the JSON string back into an array
+    const plans = JSON.parse(formData.get("plans") || "[]");
 
-    // Construct Plans with "category: SUBSCRIPTION"
-    const sellingPlans = [1, 2, 3].map(month => ({
-      name: `Deliver every ${month} Month${month > 1 ? 's' : ''} (Save ${discounts[month]}%)`,
-      options: [`${month} Month${month > 1 ? 's' : ''}`],
-      position: month,
+    // Construct "sellingPlansToCreate" for Shopify API
+    const sellingPlansToCreate = plans.map((plan, index) => ({
+      name: `Deliver every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s) (Save ${plan.discount}%)`,
+      options: [`Every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s)`],
+      position: index + 1,
       category: "SUBSCRIPTION", 
       billingPolicy: {
-        recurring: { interval: "MONTH", intervalCount: month }
+        recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) }
       },
       deliveryPolicy: {
-        recurring: { interval: "MONTH", intervalCount: month }
+        recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) }
       },
       pricingPolicies: [
         {
           fixed: {
             adjustmentType: "PERCENTAGE",
-            adjustmentValue: { percentage: parseFloat(discounts[month]) }
+            adjustmentValue: { percentage: parseFloat(plan.discount) }
           }
         }
       ]
     }));
 
-    // Step A: Create the Selling Plan Group
+    // Step A: Create the Selling Plan Group in Shopify
     const response = await admin.graphql(
       `#graphql
       mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!) {
         sellingPlanGroupCreate(input: $input) {
           sellingPlanGroup {
             id
-            sellingPlans(first: 5) {
+            sellingPlans(first: 10) {
               edges {
                 node {
                   id
                   name
+                  billingPolicy { ... on SellingPlanRecurringBillingPolicy { interval intervalCount } }
                 }
               }
             }
@@ -182,7 +184,7 @@ export async function action({ request }) {
             merchantCode: `sub-${targetId}-${Date.now()}`,
             options: ["Delivery Interval"],
             position: 1,
-            sellingPlansToCreate: sellingPlans
+            sellingPlansToCreate: sellingPlansToCreate
           }
         }
       }
@@ -201,28 +203,22 @@ export async function action({ request }) {
 
     // Step B: Attach Products or Collection
     if (type === "product") {
-      // Case 1: Single Product
       await admin.graphql(
         `#graphql
         mutation productJoinSellingPlanGroups($id: ID!, $sellingPlanGroupIds: [ID!]!) {
           productJoinSellingPlanGroups(id: $id, sellingPlanGroupIds: $sellingPlanGroupIds) {
             product { id }
-            userErrors { field message }
           }
         }`,
         { variables: { id: targetId, sellingPlanGroupIds: [newGroup.id] } }
       );
     } else if (type === "collection") {
-      // Case 2: Entire Collection
-      // First, fetch the products in this collection
       const collectionQuery = await admin.graphql(
         `#graphql
         query getCollectionProducts($id: ID!) {
           collection(id: $id) {
             products(first: 250) {
-              edges {
-                node { id }
-              }
+              edges { node { id } }
             }
           }
         }`,
@@ -232,47 +228,49 @@ export async function action({ request }) {
       const collectionData = await collectionQuery.json();
       const productIds = collectionData.data.collection?.products?.edges.map(edge => edge.node.id) || [];
 
-      // Then, attach the plan group to all those products
       if (productIds.length > 0) {
         await admin.graphql(
           `#graphql
           mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
             sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
               sellingPlanGroup { id }
-              userErrors { field message }
             }
           }`,
-          {
-            variables: {
-              id: newGroup.id,
-              productIds: productIds
-            }
-          }
+          { variables: { id: newGroup.id, productIds: productIds } }
         );
       }
     }
 
-    // Step C: Save to Local DB
-    const plansMap = {};
+    // Step C: Map Created Shopify IDs back to our Plans
+    // We match them based on interval/count to be safe
+    const shopifyPlanIdsMap = {};
+    
+    // We loop through the Created Plans from Shopify
     newGroup.sellingPlans.edges.forEach(({ node }) => {
-      if (node.name.includes("1 Month")) plansMap["1"] = node.id;
-      if (node.name.includes("2 Month")) plansMap["2"] = node.id;
-      if (node.name.includes("3 Month")) plansMap["3"] = node.id;
+       const interval = node.billingPolicy.interval;
+       const count = node.billingPolicy.intervalCount;
+       
+       // Find which local plan this matches (1-based index key)
+       plans.forEach((p, index) => {
+          if (p.interval === interval && parseInt(p.intervalCount) === count) {
+             shopifyPlanIdsMap[index + 1] = node.id;
+          }
+       });
     });
 
-    const subscriptionData = {
-      type,
-      targetId,
-      targetTitle,
-      originalPrice,
-      oneMonthDiscount: discounts[1],
-      twoMonthDiscount: discounts[2],
-      threeMonthDiscount: discounts[3],
-      shopifyGroupId: newGroup.id,
-      shopifyPlanIds: plansMap
-    };
-    
-    await createSubscription(subscriptionData);
+    // Step D: Save to Local DB
+    await db.subscription.create({
+      data: {
+        type,
+        targetId,
+        targetTitle,
+        originalPrice: originalPrice || "0",
+        plansData: JSON.stringify(plans), // Save the array of settings
+        shopifyGroupId: newGroup.id,
+        shopifyPlanIds: JSON.stringify(shopifyPlanIdsMap), // Save the map of IDs
+        enabled: true
+      }
+    });
   }
   
   return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
@@ -286,27 +284,45 @@ export default function Subscriptions() {
   
   const [showModal, setShowModal] = useState(false);
   const [subscriptionType, setSubscriptionType] = useState("product");
+  
+  // --- STATE FOR DYNAMIC PLANS ---
+  const [plans, setPlans] = useState([
+    { interval: "MONTH", intervalCount: 1, discount: 10 }
+  ]);
+
   const [formData, setFormData] = useState({
     targetId: "",
     targetTitle: "",
-    originalPrice: "",
-    oneMonthDiscount: "",
-    twoMonthDiscount: "",
-    threeMonthDiscount: ""
+    originalPrice: ""
   });
 
   const isLoading = ["loading", "submitting"].includes(fetcher.state);
 
+  // --- HELPERS FOR PLANS ---
+  const addPlan = () => {
+    setPlans([...plans, { interval: "MONTH", intervalCount: 1, discount: 0 }]);
+  };
+
+  const removePlan = (index) => {
+    const newPlans = [...plans];
+    newPlans.splice(index, 1);
+    setPlans(newPlans);
+  };
+
+  const updatePlan = (index, field, value) => {
+    const newPlans = [...plans];
+    newPlans[index][field] = value;
+    setPlans(newPlans);
+  };
+
   const handleCancel = useCallback(() => {
     setShowModal(false);
     setSubscriptionType("product");
+    setPlans([{ interval: "MONTH", intervalCount: 1, discount: 10 }]); // Reset to default
     setFormData({
       targetId: "",
       targetTitle: "",
-      originalPrice: "",
-      oneMonthDiscount: "",
-      twoMonthDiscount: "",
-      threeMonthDiscount: ""
+      originalPrice: ""
     });
   }, []);
 
@@ -346,12 +362,12 @@ export default function Subscriptions() {
     data.append("targetId", formData.targetId);
     data.append("targetTitle", formData.targetTitle);
     data.append("originalPrice", formData.originalPrice);
-    data.append("oneMonthDiscount", formData.oneMonthDiscount);
-    data.append("twoMonthDiscount", formData.twoMonthDiscount);
-    data.append("threeMonthDiscount", formData.threeMonthDiscount);
+    
+    // SEND PLANS AS JSON
+    data.append("plans", JSON.stringify(plans));
     
     fetcher.submit(data, { method: "post" });
-  }, [formData, subscriptionType, fetcher, shopify]);
+  }, [formData, subscriptionType, plans, fetcher, shopify]);
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data) {
@@ -393,6 +409,13 @@ export default function Subscriptions() {
     ...collections.map(c => ({ label: c.title, value: c.id }))
   ];
 
+  const intervalOptions = [
+    { label: "Day(s)", value: "DAY" },
+    { label: "Week(s)", value: "WEEK" },
+    { label: "Month(s)", value: "MONTH" },
+    { label: "Year(s)", value: "ANNUAL" },
+  ];
+
   return (
     <AppProvider i18n={enTranslations}>
       <Page>
@@ -405,7 +428,7 @@ export default function Subscriptions() {
         <Layout>
           <Layout.Section>
             <Banner tone="info">
-              <p>Create plans here. This will automatically generate Selling Plans in Shopify and sync them to your product.</p>
+              <p>Create flexible subscription plans (e.g., Every 4 Days, Every 2 Weeks) and attach them to your products.</p>
             </Banner>
           </Layout.Section>
 
@@ -425,35 +448,47 @@ export default function Subscriptions() {
                   itemCount={subscriptions.length}
                   headings={[
                     { title: 'Product/Collection' },
-                    { title: 'Discounts (1m/2m/3m)' },
+                    { title: 'Plans Created' },
                     { title: 'Status' },
                     { title: 'Actions' },
                   ]}
                 >
-                  {subscriptions.map((sub, index) => (
-                    <IndexTable.Row id={sub.id} key={sub.id} position={index}>
-                      <IndexTable.Cell>
-                        <Text variant="bodyMd" fontWeight="bold" as="span">{sub.targetTitle}</Text>
-                        {sub.shopifyGroupId && <Badge tone="info">Synced</Badge>}
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        {sub.oneMonthDiscount}% / {sub.twoMonthDiscount}% / {sub.threeMonthDiscount}%
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        {sub.enabled ? <Badge tone="success">Active</Badge> : <Badge>Disabled</Badge>}
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <InlineStack gap="200">
-                          <Button size="slim" onClick={() => handleToggle(sub.id)}>
-                            {sub.enabled ? "Disable" : "Enable"}
-                          </Button>
-                          <Button size="slim" tone="critical" onClick={() => handleDelete(sub.id, sub.shopifyGroupId)}>
-                            Delete
-                          </Button>
-                        </InlineStack>
-                      </IndexTable.Cell>
-                    </IndexTable.Row>
-                  ))}
+                  {subscriptions.map((sub, index) => {
+                    // Safe parse plans
+                    let plansDisplay = [];
+                    try { plansDisplay = JSON.parse(sub.plansData || '[]'); } catch(e){}
+
+                    return (
+                      <IndexTable.Row id={sub.id} key={sub.id} position={index}>
+                        <IndexTable.Cell>
+                          <Text variant="bodyMd" fontWeight="bold" as="span">{sub.targetTitle}</Text>
+                          {sub.shopifyGroupId && <Badge tone="info">Synced</Badge>}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <InlineStack gap="100" wrap>
+                             {plansDisplay.map((p, i) => (
+                               <Badge key={i} tone="new">
+                                 {p.intervalCount} {p.interval}(s) - {p.discount}% Off
+                               </Badge>
+                             ))}
+                          </InlineStack>
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          {sub.enabled ? <Badge tone="success">Active</Badge> : <Badge>Disabled</Badge>}
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <InlineStack gap="200">
+                            <Button size="slim" onClick={() => handleToggle(sub.id)}>
+                              {sub.enabled ? "Disable" : "Enable"}
+                            </Button>
+                            <Button size="slim" tone="critical" onClick={() => handleDelete(sub.id, sub.shopifyGroupId)}>
+                              Delete
+                            </Button>
+                          </InlineStack>
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    );
+                  })}
                 </IndexTable>
               )}
             </Card>
@@ -509,38 +544,71 @@ export default function Subscriptions() {
               
               <Divider />
               
-              {/* Discount Section */}
-              <Text variant="headingSm" as="h3">Discount Rules</Text>
+              {/* Dynamic Plans Section */}
+              <InlineStack align="space-between">
+                 <Text variant="headingSm" as="h3">Subscription Intervals</Text>
+                 <Button icon={PlusIcon} onClick={addPlan} variant="plain">Add Interval</Button>
+              </InlineStack>
               
-              <FormLayout.Group>
-                <TextField
-                  label="1 Month Discount"
-                  type="number"
-                  value={formData.oneMonthDiscount}
-                  onChange={(val) => setFormData(prev => ({ ...prev, oneMonthDiscount: val }))}
-                  suffix="%"
-                  autoComplete="off"
-                  helpText="e.g. 5"
-                />
-                <TextField
-                  label="2 Month Discount"
-                  type="number"
-                  value={formData.twoMonthDiscount}
-                  onChange={(val) => setFormData(prev => ({ ...prev, twoMonthDiscount: val }))}
-                  suffix="%"
-                  autoComplete="off"
-                  helpText="e.g. 10"
-                />
-                <TextField
-                  label="3 Month Discount"
-                  type="number"
-                  value={formData.threeMonthDiscount}
-                  onChange={(val) => setFormData(prev => ({ ...prev, threeMonthDiscount: val }))}
-                  suffix="%"
-                  autoComplete="off"
-                  helpText="e.g. 15"
-                />
-              </FormLayout.Group>
+              <Box paddingBlockEnd="200">
+                <Text tone="subdued" as="p" variant="bodyXs">
+                  Define how often the customer will be charged and what discount they get.
+                </Text>
+              </Box>
+
+              <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '5px' }}>
+              <BlockStack gap="400">
+              {plans.map((plan, index) => (
+                <div key={index} style={{ background: "#f7f7f7", padding: "10px", borderRadius: "8px", border: "1px solid #e1e1e1" }}>
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between">
+                       <Text variant="bodySm" fontWeight="bold">Plan #{index + 1}</Text>
+                       {plans.length > 1 && (
+                         <Button icon={DeleteIcon} tone="critical" variant="plain" onClick={() => removePlan(index)} />
+                       )}
+                    </InlineStack>
+
+                    <InlineStack gap="200" align="start">
+                        {/* Interval Count */}
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label="Every"
+                            type="number"
+                            value={plan.intervalCount}
+                            onChange={(v) => updatePlan(index, 'intervalCount', v)}
+                            autoComplete="off"
+                            min={1}
+                          />
+                        </div>
+
+                        {/* Interval Type */}
+                        <div style={{ flex: 1.5 }}>
+                          <Select
+                            label="Unit"
+                            options={intervalOptions}
+                            value={plan.interval}
+                            onChange={(v) => updatePlan(index, 'interval', v)}
+                          />
+                        </div>
+
+                        {/* Discount */}
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label="Discount %"
+                            type="number"
+                            value={plan.discount}
+                            onChange={(v) => updatePlan(index, 'discount', v)}
+                            suffix="%"
+                            autoComplete="off"
+                          />
+                        </div>
+                    </InlineStack>
+                  </BlockStack>
+                </div>
+              ))}
+              </BlockStack>
+              </div>
+
             </FormLayout>
           </Modal.Section>
         </Modal>

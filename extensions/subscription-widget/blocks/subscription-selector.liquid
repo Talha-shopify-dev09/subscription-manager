@@ -38,29 +38,17 @@
     text-align: center;
   }
 
-  /* Grid Layout: 3 columns on desktop, 1 on mobile */
+  /* Grid Layout: Dynamic based on plan count, max 3 columns */
   .sw-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 12px;
     margin-bottom: 20px;
   }
-  @media (max-width: 600px) {
-    .sw-grid { grid-template-columns: 1fr; }
-  }
 
   /* Plan Card Styles */
-  .sw-label {
-    position: relative;
-    cursor: pointer;
-  }
-  
-  .sw-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
+  .sw-label { position: relative; cursor: pointer; }
+  .sw-input { position: absolute; opacity: 0; width: 0; height: 0; }
 
   .sw-card {
     border: 2px solid #e5e7eb;
@@ -73,6 +61,7 @@
     flex-direction: column;
     justify-content: center;
     background: #fff;
+    min-height: 110px;
   }
 
   /* Hover State */
@@ -91,10 +80,11 @@
   /* Typography */
   .sw-duration {
     font-weight: 700;
-    font-size: 16px;
+    font-size: 15px;
     display: block;
     margin-bottom: 4px;
     color: #374151;
+    text-transform: capitalize;
   }
   
   .sw-price {
@@ -156,17 +146,9 @@
 
 <div id="subscription-widget-{{ product.id }}">
   <div style="padding: 20px; text-align: center; color: #6b7280; background: #f9fafb; border-radius: 8px;">
-    <svg style="animation: spin 1s linear infinite; height: 20px; width: 20px; margin-right: 8px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle style="opacity: 0.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path style="opacity: 0.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-    </svg>
     Loading options...
   </div>
 </div>
-
-<style>
-@keyframes spin { 100% { transform: rotate(360deg); } }
-</style>
 
 <script>
 (async function() {
@@ -174,6 +156,7 @@
   const productId = '{{ product.id }}';
   const variantId = {{ product.selected_or_first_available_variant.id }};
 
+  // Extract ID number from "gid://..."
   function cleanId(id) {
     if (!id) return null;
     const str = id.toString();
@@ -192,51 +175,72 @@
     }
 
     const sub = data.subscription;
-    
-    let planIds = sub.shopifyPlanIds;
-    if (typeof planIds === 'string') {
-        try { planIds = JSON.parse(planIds); } catch (e) { planIds = {}; }
+    const originalPrice = parseFloat('{{ product.price | money_without_currency | remove: "," }}');
+
+    // 1. PARSE DYNAMIC PLANS
+    let plans = [];
+    try {
+        plans = JSON.parse(sub.plansData || '[]');
+    } catch(e) {
+        console.error("Error parsing plansData", e);
     }
-    planIds = planIds || {};
+    
+    // 2. PARSE SHOPIFY IDs
+    let shopifyIds = {};
+    try {
+        shopifyIds = JSON.parse(sub.shopifyPlanIds || '{}');
+    } catch(e) {
+        console.error("Error parsing shopifyPlanIds", e);
+    }
 
-    const price = parseFloat('{{ product.price | money_without_currency | remove: "," }}');
-    const p1 = (price * (1 - sub.oneMonthDiscount/100)).toFixed(2);
-    const p2 = (price * (1 - sub.twoMonthDiscount/100)).toFixed(2);
-    const p3 = (price * (1 - sub.threeMonthDiscount/100)).toFixed(2);
+    // Find Max Discount for badge
+    const maxDiscount = Math.max(...plans.map(p => parseFloat(p.discount || 0)));
 
-    // 2. RENDER THE BEAUTIFUL HTML
+    // 3. GENERATE HTML LOOP
+    let plansHtml = '';
+
+    if (plans.length === 0) {
+        // Fallback if no dynamic plans exist yet
+        container.style.display = 'none';
+        return;
+    }
+
+    plans.forEach((plan, index) => {
+        // Calculate Discounted Price
+        const discount = parseFloat(plan.discount || 0);
+        const discountedPrice = (originalPrice * (1 - discount/100)).toFixed(2);
+        
+        // Match Shopify ID (Key is 1-based index)
+        const key = (index + 1).toString(); 
+        const sellingPlanId = cleanId(shopifyIds[key]);
+        
+        // Determine "Best Value"
+        const isBestValue = (discount === maxDiscount && discount > 0);
+        const isChecked = index === 0 ? 'checked' : '';
+
+        // Format Label (e.g. "Every 2 Weeks")
+        const label = `Every ${plan.intervalCount} ${plan.interval.toLowerCase()}${plan.intervalCount > 1 ? 's' : ''}`;
+
+        plansHtml += `
+           <label class="sw-label">
+             <input type="radio" class="sw-input" name="sub_plan" value="${sellingPlanId || ''}" ${isChecked}>
+             <div class="sw-card">
+               ${ isBestValue ? '<span class="sw-badge">Best Value</span>' : '' }
+               <span class="sw-duration">${label}</span>
+               <span class="sw-price">${discountedPrice}</span>
+               <div class="sw-discount">Save ${discount}%</div>
+             </div>
+           </label>
+        `;
+    });
+
+    // 4. RENDER WIDGET
     container.innerHTML = `
       <div class="sw-container">
         <h3 class="sw-title">${ '{{ section.settings.heading }}' }</h3>
         
         <div class="sw-grid">
-           <label class="sw-label">
-             <input type="radio" class="sw-input" name="sub_plan" value="${cleanId(planIds['1']) || ''}" checked>
-             <div class="sw-card">
-               <span class="sw-duration">1 Month</span>
-               <span class="sw-price">${p1}</span>
-               <div class="sw-discount">Save ${sub.oneMonthDiscount}%</div>
-             </div>
-           </label>
-           
-           <label class="sw-label">
-             <input type="radio" class="sw-input" name="sub_plan" value="${cleanId(planIds['2']) || ''}">
-             <div class="sw-card">
-               <span class="sw-badge">Best Value</span>
-               <span class="sw-duration">2 Months</span>
-               <span class="sw-price">${p2}</span>
-               <div class="sw-discount">Save ${sub.twoMonthDiscount}%</div>
-             </div>
-           </label>
-           
-           <label class="sw-label">
-             <input type="radio" class="sw-input" name="sub_plan" value="${cleanId(planIds['3']) || ''}">
-             <div class="sw-card">
-               <span class="sw-duration">3 Months</span>
-               <span class="sw-price">${p3}</span>
-               <div class="sw-discount">Save ${sub.threeMonthDiscount}%</div>
-             </div>
-           </label>
+           ${plansHtml}
         </div>
 
         <button id="btn-add-sub" class="sw-btn">
@@ -246,7 +250,7 @@
       </div>
     `;
 
-    // 3. EVENT LISTENER
+    // 5. EVENT LISTENER
     document.getElementById('btn-add-sub').addEventListener('click', async function(e) {
         const btn = e.target;
         const errorMsg = document.getElementById('error-msg');
@@ -255,7 +259,7 @@
         errorMsg.style.display = 'none';
 
         if(!selected || !selected.value) {
-            errorMsg.innerText = "Error: Plan ID missing. Please edit app settings.";
+            errorMsg.innerText = "Error: Plan ID missing. Please edit/save the plan in App Admin.";
             errorMsg.style.display = 'block';
             return;
         }

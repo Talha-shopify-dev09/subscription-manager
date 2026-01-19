@@ -5,43 +5,43 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// 1. CHANGED: Switched from sqlite to postgresql for Supabase/Render
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// 2. EXISTING: Kept your Session model exactly the same
 model Session {
-  id          String    @id
-  shop        String
-  state       String
-  isOnline    Boolean   @default(false)
-  scope       String?
-  expires     DateTime?
-  accessToken String
-  userId      BigInt?
-  firstName   String?
-  lastName    String?
-  email       String?
-  accountOwner Boolean  @default(false)
-  locale      String?
-  collaborator Boolean? @default(false)
-  emailVerified Boolean? @default(false)
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
   refreshToken  String?
   refreshTokenExpires DateTime?
 }
 
-// 3. NEW: Added the Subscription model so your data is saved
+// UPDATED MODEL: Supports flexible plans (Days, Weeks, Months)
 model Subscription {
   id                 String   @id @default(uuid())
   type               String   // "product" or "collection"
   targetId           String
   targetTitle        String
   originalPrice      String
-  oneMonthDiscount   String
-  twoMonthDiscount   String
-  threeMonthDiscount String
+
+  // NEW: This stores your custom plans as a JSON string
+  // Example: '[{"interval":"DAY", "intervalCount":4, "discount":10}, ...]'
+  plansData          String   
+
   shopifyGroupId     String?
   shopifyPlanIds     String?  // Stored as JSON string
   enabled            Boolean  @default(true)
