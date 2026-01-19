@@ -25,53 +25,60 @@
   const productId = '{{ product.id }}';
   const variantId = {{ product.selected_or_first_available_variant.id }};
 
+  // Helper to extract number from "gid://shopify/SellingPlan/12345"
+  function cleanId(id) {
+    if (!id) return null;
+    const str = id.toString();
+    const parts = str.split('/');
+    return parts[parts.length - 1]; // Gets the last part (the number)
+  }
+
   try {
-    // 1. Fetch Subscription Data
     const response = await fetch(`/apps/subscription-manager/api/subscription/${productId}`);
-    
-    if (!response.ok) {
-        container.style.display = 'none';
-        return;
-    }
+    if (!response.ok) { container.style.display = 'none'; return; }
 
     const data = await response.json();
-    
-    // If no subscription or disabled, hide widget
     if (!data.subscription || !data.subscription.enabled) {
       container.style.display = 'none';
       return;
     }
 
-    // 2. Prepare Data
     const sub = data.subscription;
-    const planIds = sub.shopifyPlanIds || {}; 
-    const price = parseFloat('{{ product.price | money_without_currency | remove: "," }}');
+    
+    // Parse Plan IDs safely
+    let planIds = sub.shopifyPlanIds;
+    if (typeof planIds === 'string') {
+        try { planIds = JSON.parse(planIds); } catch (e) { planIds = {}; }
+    }
+    planIds = planIds || {};
 
-    // Calculate discounted prices
+    // DEBUG: Print IDs to console so you can see them
+    console.log("Raw Plan IDs from DB:", planIds);
+
+    const price = parseFloat('{{ product.price | money_without_currency | remove: "," }}');
     const p1 = (price * (1 - sub.oneMonthDiscount/100)).toFixed(2);
     const p2 = (price * (1 - sub.twoMonthDiscount/100)).toFixed(2);
     const p3 = (price * (1 - sub.threeMonthDiscount/100)).toFixed(2);
 
-    // 3. Render HTML
     container.innerHTML = `
       <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin: 20px 0; background: #fff;">
         <h3 style="margin-top:0;">${ '{{ section.settings.heading }}' }</h3>
         
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px;">
            <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px;">
-             <input type="radio" name="sub_plan" value="${planIds['1'] || ''}" checked>
+             <input type="radio" name="sub_plan" value="${cleanId(planIds['1']) || ''}" checked>
              <div style="font-weight:bold;">1 Month</div>
              <div>${p1}</div>
            </label>
            
            <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px; background:#f0f9ff; border-color:#0070f3;">
-             <input type="radio" name="sub_plan" value="${planIds['2'] || ''}">
+             <input type="radio" name="sub_plan" value="${cleanId(planIds['2']) || ''}">
              <div style="font-weight:bold;">2 Months</div>
              <div>${p2}</div>
            </label>
            
            <label style="border:1px solid #ccc; padding:10px; text-align:center; cursor:pointer; border-radius:5px;">
-             <input type="radio" name="sub_plan" value="${planIds['3'] || ''}">
+             <input type="radio" name="sub_plan" value="${cleanId(planIds['3']) || ''}">
              <div style="font-weight:bold;">3 Months</div>
              <div>${p3}</div>
            </label>
@@ -81,10 +88,10 @@
             Add Subscription to Cart
         </button>
         <p id="error-msg" style="color:red; display:none; margin-top:10px; text-align:center;"></p>
+        <p style="font-size:10px; color:#999; text-align:center;">Debug: ID 1 is ${planIds['1'] || 'MISSING'}</p>
       </div>
     `;
 
-    // 4. Button Click Logic
     document.getElementById('btn-add-sub').addEventListener('click', async function(e) {
         const btn = e.target;
         const errorMsg = document.getElementById('error-msg');
@@ -93,51 +100,46 @@
         errorMsg.style.display = 'none';
 
         if(!selected || !selected.value) {
-            alert('Please select a plan.');
+            errorMsg.innerText = "Error: Plan ID is missing. Please Edit & Save the plan in App Admin.";
+            errorMsg.style.display = 'block';
             return;
         }
 
-        // --- THE FIX: Convert String ID to Integer ---
         const planId = parseInt(selected.value);
 
         if (isNaN(planId)) {
-             errorMsg.innerText = "Error: Invalid Plan ID format.";
+             errorMsg.innerText = "Error: Invalid Plan ID format (NaN).";
              errorMsg.style.display = 'block';
              return;
         }
 
         btn.innerText = "Adding...";
         
-        const payload = {
-            items: [{
-                id: variantId,
-                quantity: 1,
-                selling_plan: planId // Sending Number (Integer) now
-            }]
-        };
-
         try {
             const cartResponse = await fetch('/cart/add.js', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    items: [{
+                        id: variantId,
+                        quantity: 1,
+                        selling_plan: planId 
+                    }]
+                })
             });
 
             const cartData = await cartResponse.json();
 
             if (!cartResponse.ok) {
-                console.error("Cart Error:", cartData);
                 btn.innerText = "Try Again";
-                errorMsg.innerText = `Error: ${cartData.description || cartData.message}`;
+                errorMsg.innerText = `Error: ${cartData.description || "Issue adding to cart"}`;
                 errorMsg.style.display = 'block';
                 return;
             }
-
-            // Success!
             window.location.href = '/cart';
 
         } catch (err) {
-            console.error("Network Error", err);
+            console.error(err);
             btn.innerText = "Error";
         }
     });
