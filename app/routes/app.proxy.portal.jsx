@@ -1,23 +1,22 @@
-import { json } from "@react-router/node";
-import { useLoaderData, useSubmit, Form } from "react-router";
+// 1. REMOVED the broken 'json' import
+import { useLoaderData, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
-  Page, Layout, Card, Text, Button, Badge, BlockStack, InlineStack, Banner
+  Card, Text, Button, Badge, BlockStack, InlineStack
 } from "@shopify/polaris";
 
-// 1. LOADER: Get Customer's Contracts
+// 2. LOADER: Get Customer's Contracts
 export async function loader({ request }) {
-  const { admin, session } = await authenticate.public.appProxy(request);
+  const { admin } = await authenticate.public.appProxy(request);
 
-  // Get the logged-in customer ID from the URL query params (Shopify adds this)
   const url = new URL(request.url);
   const customerId = url.searchParams.get("logged_in_customer_id");
 
   if (!customerId) {
-    return json({ customer: null, contracts: [] });
+    // FIX: Use Response.json() instead of json()
+    return Response.json({ customer: null, contracts: [] });
   }
 
-  // Query Shopify for this customer's subscriptions
   const response = await admin.graphql(
     `#graphql
     query getCustomerContracts($id: ID!) {
@@ -45,19 +44,20 @@ export async function loader({ request }) {
   const responseJson = await response.json();
   const customer = responseJson.data.customer;
 
-  return json({ 
+  // FIX: Use Response.json()
+  return Response.json({ 
     customer: customer, 
     contracts: customer?.subscriptionContracts?.nodes || [] 
   });
 }
 
-// 2. ACTION: Handle Cancellation
+// 3. ACTION: Handle Cancellation
 export async function action({ request }) {
   const { admin } = await authenticate.public.appProxy(request);
   const formData = await request.formData();
   const contractId = formData.get("contractId");
 
-  if (!contractId) return json({ error: "No ID" });
+  if (!contractId) return Response.json({ error: "No ID" });
 
   try {
     const response = await admin.graphql(
@@ -81,17 +81,17 @@ export async function action({ request }) {
     const errors = responseJson.data.subscriptionContractCancel.userErrors;
     
     if (errors.length > 0) {
-      return json({ error: errors[0].message });
+      return Response.json({ error: errors[0].message });
     }
     
-    return json({ success: true });
+    return Response.json({ success: true });
 
   } catch (err) {
-    return json({ error: "Server Error" });
+    return Response.json({ error: "Server Error" });
   }
 }
 
-// 3. UI: The Page the Customer Sees
+// 4. UI: The Page the Customer Sees
 export default function CustomerPortal() {
   const { customer, contracts } = useLoaderData();
   const submit = useSubmit();
