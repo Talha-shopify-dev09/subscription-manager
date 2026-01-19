@@ -73,9 +73,6 @@
   transition: opacity 0.2s;
 }
 .app-add-btn:hover { opacity: 0.9; }
-
-/* Utility to hide theme button */
-.hidden-theme-btn { display: none !important; }
 </style>
 
 <script>
@@ -84,18 +81,8 @@
   const container = document.getElementById('subscription-widget-{{ product.id }}');
   const loadingDiv = container.querySelector('.subscription-loading');
   
-  // Helper: Hides the default Shopify Add to Cart button
-  function hideThemeButton() {
-    const themeForms = document.querySelectorAll('form[action*="/cart/add"]');
-    themeForms.forEach(form => {
-      const btn = form.querySelector('[type="submit"], .product-form__submit, .add-to-cart, .shopify-payment-button');
-      if (btn) btn.classList.add('hidden-theme-btn');
-    });
-  }
-
   try {
     // 1. Fetch Data
-    // NOTE: Using the Proxy Path 'subscription-manager' exactly as configured in Dashboard
     const numericId = productId.toString();
     const response = await fetch(`/apps/subscription-manager/api/subscription/${numericId}`);
     
@@ -104,14 +91,13 @@
     
     loadingDiv.style.display = 'none';
 
-    // 2. If no subscription, HIDE widget and STOP (Theme button stays visible)
+    // 2. If no subscription, just hide the widget
     if (!data.subscription || !data.subscription.enabled) {
       container.style.display = 'none';
       return;
     }
     
-    // 3. If subscription exists, Show Widget & Hide Theme Button
-    hideThemeButton();
+    // NOTE: Removed "hideThemeButton()" logic here. Theme button stays visible.
 
     const sub = data.subscription;
     const planIds = sub.shopifyPlanIds || {};
@@ -124,7 +110,7 @@
       3: (originalPrice - (originalPrice * sub.threeMonthDiscount / 100)).toFixed(2)
     };
 
-    // 4. Render Widget HTML (Including the Button)
+    // 3. Render Widget HTML (Including your Custom Button)
     container.innerHTML = `
       <div class="subscription-options loaded">
         <div class="subscription-header">
@@ -173,7 +159,7 @@
       </div>
     `;
 
-    // 5. Add to Cart Logic
+    // 4. Add to Cart Logic
     const addBtn = container.querySelector('#app-add-to-cart');
     addBtn.addEventListener('click', async () => {
       const selectedRadio = container.querySelector('input[name="subscription-plan"]:checked');
