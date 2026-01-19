@@ -1,0 +1,57 @@
+{% schema %}
+{
+  "name": "Auto Portal Link",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "link_text",
+      "label": "Button Text",
+      "default": "Manage Subscriptions"
+    },
+    {
+      "type": "color",
+      "id": "btn_color",
+      "label": "Button Color",
+      "default": "#000000"
+    }
+  ]
+}
+{% endschema %}
+
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    // 1. Only run on the Account Page
+    if (window.location.pathname === "/account" || window.location.pathname.includes("/account")) {
+      
+      // 2. Define the Button HTML
+      const btnHtml = `
+        <div style="margin: 20px 0;">
+          <a href="/apps/subscription-manager/portal" 
+             style="background-color: {{ block.settings.btn_color }}; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+             {{ block.settings.link_text }}
+          </a>
+        </div>
+      `;
+
+      // 3. Find a place to inject it
+      // We look for common elements found on Shopify Account pages
+      const targets = [
+        document.querySelector('.customer__title'),      // Dawn Theme
+        document.querySelector('h1'),                    // Generic Themes
+        document.querySelector('.account-header'),       // Other Themes
+        document.querySelector('#customer_logout_link')  // Fallback
+      ];
+
+      // 4. Inject after the first valid target found
+      for (let i = 0; i < targets.length; i++) {
+        if (targets[i]) {
+          const div = document.createElement('div');
+          div.innerHTML = btnHtml;
+          targets[i].insertAdjacentElement('afterend', div);
+          break; // Stop after inserting once
+        }
+      }
+    }
+  });
+</script>
