@@ -14,12 +14,13 @@ import {
   Box,
   List,
   Link as PolarisLink,
+  Banner
 } from "@shopify/polaris";
 
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
 
-  // 1. FETCH SUBSCRIPTION STATS (Wrapped in Try/Catch for Safety)
+  // 1. FETCH SUBSCRIPTION STATS (With Safety Check)
   try {
     const statsResponse = await admin.graphql(
       `#graphql
@@ -38,9 +39,9 @@ export const loader = async ({ request }) => {
 
     const statsJson = await statsResponse.json();
 
-    // SAFETY CHECK: If Shopify returns an error (e.g. missing scopes), return 0s instead of crashing
+    // Prevent crash if scopes are missing
     if (statsJson.errors || !statsJson.data) {
-      console.log("⚠️ API Error or Missing Scopes:", statsJson.errors);
+      console.log("⚠️ API Error:", statsJson.errors);
       return { activeCount: 0, cancelledCount: 0, pausedCount: 0 };
     }
 
