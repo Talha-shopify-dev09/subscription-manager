@@ -13,9 +13,10 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import db from "../db.server"; 
 
 // --- LOADER: Fetch Data ---
+// --- LOADER: Fetch Data (SECURED) ---
 export async function loader({ request }) {
-  await authenticate.admin(request);
-  const { admin } = await authenticate.admin(request);
+  // 1. Get the Session to identify the shop
+  const { admin, session } = await authenticate.admin(request);
 
   // Fetch Products & Collections
   const response = await admin.graphql(
@@ -57,7 +58,11 @@ export async function loader({ request }) {
     productsCount: edge.node.productsCount.count
   }));
   
+  // 2. FILTER SUBSCRIPTIONS BY SHOP (Critical Fix)
   const subscriptions = await db.subscription.findMany({
+    where: {
+      shop: session.shop, // <--- Only fetch for the current store
+    },
     orderBy: { createdAt: 'desc' }
   });
   

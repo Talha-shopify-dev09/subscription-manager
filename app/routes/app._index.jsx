@@ -1,255 +1,151 @@
-import { useEffect } from "react";
-import { useFetcher, Link } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
-import { boundary } from "@shopify/shopify-app-react-router/server";
+import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
+import {
+  Page,
+  Layout,
+  Card,
+  Text,
+  BlockStack,
+  InlineGrid,
+  Box,
+  Button,
+  Divider,
+  InlineStack,
+  Icon
+} from "@shopify/polaris";
+import {
+  CheckCircleIcon,
+  XCircleIcon,
+  PauseCircleIcon,
+  SettingsIcon,
+  ArrowRightIcon
+} from "@shopify/polaris-icons";
 
-export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-
-  return null;
-};
-
-export const action = async ({ request }) => {
+// --- LOADER: ONLY FETCH STATS (No Product Generation) ---
+export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
+
+  const statsResponse = await admin.graphql(
     `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-  const product = responseJson.data.productCreate.product;
-  const variantId = product.variants.edges[0].node.id;
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
+    query getSubscriptionStats {
+      active: subscriptionContracts(first: 200, query: "status:ACTIVE") {
+        edges { node { id } }
       }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
+      cancelled: subscriptionContracts(first: 200, query: "status:CANCELLED") {
+        edges { node { id } }
+      }
+      paused: subscriptionContracts(first: 200, query: "status:PAUSED") {
+        edges { node { id } }
+      }
+    }`
   );
-  const variantResponseJson = await variantResponse.json();
+
+  const statsJson = await statsResponse.json();
 
   return {
-    product: responseJson.data.productCreate.product,
-    variant: variantResponseJson.data.productVariantsBulkUpdate.productVariants,
+    activeCount: statsJson.data.active.edges.length,
+    cancelledCount: statsJson.data.cancelled.edges.length,
+    pausedCount: statsJson.data.paused.edges.length,
   };
-};
-
-export default function Index() {
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
-
-  return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
-
-      {/* NEW SUBSCRIPTION MANAGER SECTION */}
-      <s-section heading="📦 Subscription Manager">
-        <s-paragraph>
-          Manage subscription plans for your products. Set different pricing for 1, 2, and 3-month subscriptions.
-        </s-paragraph>
-        <Link to="/app/subscriptions" style={{ textDecoration: 'none' }}>
-          <s-button variant="primary">
-            Manage Subscriptions
-          </s-button>
-        </Link>
-      </s-section>
-
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
-        )}
-      </s-section>
-
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
-
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
-    </s-page>
-  );
 }
 
-export const headers = (headersArgs) => {
-  return boundary.headers(headersArgs);
-};
+// --- UI: CLEAN DASHBOARD ---
+export default function Index() {
+  const { activeCount, cancelledCount, pausedCount } = useLoaderData();
+
+  return (
+    <Page title="Dashboard" primaryAction={null}>
+      <Layout>
+        
+        {/* 1. WELCOME SECTION */}
+        <Layout.Section>
+          <Box paddingBlockEnd="400">
+             <Text variant="headingLg" as="h1">Welcome back, Talha</Text>
+             <Text variant="bodyMd" as="p" tone="subdued">Here is what's happening with your subscriptions today.</Text>
+          </Box>
+        </Layout.Section>
+
+        {/* 2. ANALYTICS CARDS */}
+        <Layout.Section>
+          <InlineGrid columns={{ xs: 1, sm: 3 }} gap="400">
+            
+            {/* Active Card */}
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between">
+                  <Text variant="headingSm" as="h3">Active</Text>
+                  <Box background="bg-surface-success" padding="100" borderRadius="200">
+                    <Icon source={CheckCircleIcon} tone="success" />
+                  </Box>
+                </InlineStack>
+                <Text variant="heading3xl" as="p" fontWeight="bold">{activeCount}</Text>
+                <Text variant="bodySm" tone="subdued">Recurring revenue</Text>
+              </BlockStack>
+            </Card>
+
+            {/* Paused Card */}
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between">
+                  <Text variant="headingSm" as="h3">Paused</Text>
+                  <Box background="bg-surface-warning" padding="100" borderRadius="200">
+                     <Icon source={PauseCircleIcon} tone="warning" />
+                  </Box>
+                </InlineStack>
+                <Text variant="heading3xl" as="p" fontWeight="bold">{pausedCount}</Text>
+                <Text variant="bodySm" tone="subdued">Temporarily stopped</Text>
+              </BlockStack>
+            </Card>
+
+            {/* Cancelled Card */}
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between">
+                  <Text variant="headingSm" as="h3">Cancelled</Text>
+                  <Box background="bg-surface-critical" padding="100" borderRadius="200">
+                    <Icon source={XCircleIcon} tone="critical" />
+                  </Box>
+                </InlineStack>
+                <Text variant="heading3xl" as="p" fontWeight="bold">{cancelledCount}</Text>
+                <Text variant="bodySm" tone="subdued">Lost subscriptions</Text>
+              </BlockStack>
+            </Card>
+
+          </InlineGrid>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Divider borderStyle="base" />
+        </Layout.Section>
+
+        {/* 3. MAIN ACTION (Manage Subscriptions) */}
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <InlineStack align="space-between" blockAlign="center">
+                <BlockStack gap="200">
+                  <Text variant="headingMd" as="h2">Subscription Plans</Text>
+                  <Text variant="bodyMd" as="p" tone="subdued">
+                    Create new selling plans, edit existing pricing, or manage product associations.
+                  </Text>
+                </BlockStack>
+                <Box padding="400" background="bg-surface-secondary" borderRadius="200">
+                   <Icon source={SettingsIcon} />
+                </Box>
+              </InlineStack>
+              
+              <InlineStack align="start">
+                <Link to="/app/subscriptions" style={{ textDecoration: 'none' }}>
+                  <Button variant="primary" size="large" icon={ArrowRightIcon}>
+                    Manage Subscriptions
+                  </Button>
+                </Link>
+              </InlineStack>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
+      </Layout>
+    </Page>
+  );
+}
