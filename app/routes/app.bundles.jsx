@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useLoaderData, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
-  AppProvider, // <--- ADDED
+  AppProvider,
   Page, Layout, Card, Button, Text, TextField, BlockStack,
   InlineStack, IndexTable, EmptyState, Badge
 } from "@shopify/polaris";
-import enTranslations from "@shopify/polaris/locales/en.json"; // <--- ADDED
+import enTranslations from "@shopify/polaris/locales/en.json";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import db from "../db.server";
 
@@ -40,6 +40,7 @@ export async function action({ request }) {
     const title = formData.get("title");
     const price = formData.get("price");
     const products = JSON.parse(formData.get("products"));
+    // FIX: We now save the ID directly because we mapped it to Variant ID in the UI
     const productIds = products.map(p => p.id); 
 
     await db.bundle.create({
@@ -102,18 +103,28 @@ export default function BundlePage() {
   const [price, setPrice] = useState("");
 
   const handleSelectProducts = async () => {
+    // FIX: Enable Variant Selection
     const selection = await shopify.resourcePicker({
       type: "product",
       multiple: true,
+      showVariants: true, // <--- CRITICAL CHANGE: Allows selecting specific variants
     });
 
     if (selection) {
-      setSelectedProducts(selection);
+      // FIX: Map the complicated selection object to a simple list of VARIANTS
+      const variants = selection.flatMap(product => 
+        product.variants.map(variant => ({
+          id: variant.id, // This is the Variant GID (gid://shopify/ProductVariant/123)
+          title: product.title + (variant.title !== 'Default Title' ? ` - ${variant.title}` : ''),
+          price: variant.price
+        }))
+      );
+      setSelectedProducts(variants);
     }
   };
 
   const handleSave = () => {
-    if (selectedProducts.length < 2) return shopify.toast.show("Select at least 2 products", { isError: true });
+    if (selectedProducts.length < 2) return shopify.toast.show("Select at least 2 items", { isError: true });
     if (!title) return shopify.toast.show("Enter a bundle title", { isError: true });
 
     const data = new FormData();
@@ -124,7 +135,6 @@ export default function BundlePage() {
     
     submit(data, { method: "POST" });
     
-    // Reset Form
     setTitle("");
     setPrice("");
     setSelectedProducts([]);
@@ -132,7 +142,7 @@ export default function BundlePage() {
   };
 
   const handleDelete = (id) => {
-    if(true) { // Simple confirm
+    if(true) { 
        const data = new FormData();
        data.append("action", "delete");
        data.append("id", id);
@@ -141,7 +151,6 @@ export default function BundlePage() {
   };
 
   return (
-    /* --- FIX: Wrapped in AppProvider --- */
     <AppProvider i18n={enTranslations}>
       <Page title="Fixed Bundles">
         <Layout>
@@ -153,12 +162,12 @@ export default function BundlePage() {
                 <TextField label="Bundle Title" value={title} onChange={setTitle} autoComplete="off" placeholder="e.g. Summer Essentials Kit"/>
                 <TextField label="Bundle Price (Optional)" value={price} onChange={setPrice} autoComplete="off" prefix="$" helpText="Leave empty to use sum of product prices"/>
 
-                <Button onClick={handleSelectProducts}>Select Products for Bundle</Button>
+                <Button onClick={handleSelectProducts}>Select Products/Variants</Button>
                 
                 {selectedProducts.length > 0 && (
                   <BlockStack gap="200">
                     <Text fontWeight="bold">Selected ({selectedProducts.length}):</Text>
-                    <InlineStack gap="200">
+                    <InlineStack gap="200" wrap>
                       {selectedProducts.map(p => (
                          <Badge key={p.id} tone="info">{p.title}</Badge>
                       ))}
@@ -183,7 +192,7 @@ export default function BundlePage() {
                 <IndexTable
                   resourceName={{ singular: 'bundle', plural: 'bundles' }}
                   itemCount={bundles.length}
-                  headings={[{ title: 'Title' }, { title: 'Products' }, { title: 'Price' }, { title: 'Action' }]}
+                  headings={[{ title: 'Title' }, { title: 'Items' }, { title: 'Price' }, { title: 'Action' }]}
                 >
                   {bundles.map((bundle, index) => (
                     <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>

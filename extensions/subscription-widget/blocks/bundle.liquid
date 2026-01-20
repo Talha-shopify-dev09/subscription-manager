@@ -1,0 +1,77 @@
+{% assign bundles = shop.metafields.my_app.active_bundles.value %}
+
+<div class="bundle-widget" style="padding: 20px; border: 1px solid #ddd; margin: 20px 0;">
+  <h3>📦 Special Bundles</h3>
+  
+  {% if bundles == blank %}
+    <p>No active bundles at the moment.</p>
+  {% else %}
+    {% for bundle in bundles %}
+      <div class="bundle-item" style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 8px;">
+        <h4 style="margin-top: 0;">{{ bundle.title }}</h4>
+        
+        <ul style="margin: 10px 0; padding-left: 20px;">
+          {% for variantId in bundle.products %}
+             {% comment %} 
+               Ideally, you'd loop through all_products to find titles, 
+               but that can be slow. For now, we count items.
+             {% endcomment %}
+             <li>Item #{{ forloop.index }} included</li> 
+          {% endfor %}
+        </ul>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+          <span style="font-weight: bold; font-size: 1.1em;">
+            {% if bundle.price != blank %}
+              ${{ bundle.price }}
+            {% else %}
+              See price in cart
+            {% endif %}
+          </span>
+
+          <button 
+            onclick="addBundleToCart({{ bundle.products | json | replace: '"', "'" }})"
+            style="background: black; color: white; padding: 10px 20px; border: none; cursor: pointer; border-radius: 4px;">
+            Add Bundle to Cart
+          </button>
+        </div>
+      </div>
+    {% endfor %}
+  {% endif %}
+</div>
+
+<script>
+  function addBundleToCart(variantGids) {
+    // 1. Clean IDs: Remove "gid://shopify/ProductVariant/" to get just the numbers
+    const items = variantGids.map(gid => {
+      const id = gid.split('/').pop(); 
+      return { id: id, quantity: 1 };
+    });
+
+    console.log("Adding items:", items);
+
+    // 2. Use Shopify AJAX API to add items
+    fetch(window.Shopify.routes.root + 'cart/add.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: items })
+    })
+    .then(response => response.json())
+    .then(data => {
+      // 3. Redirect to Cart on success
+      window.location.href = '/cart';
+    })
+    .catch((error) => {
+      console.error('Error:', error);
+      alert('Failed to add bundle. Check console for details.');
+    });
+  }
+</script>
+
+{% schema %}
+{
+  "name": "Fixed Bundle",
+  "target": "section",
+  "settings": []
+}
+{% endschema %}
