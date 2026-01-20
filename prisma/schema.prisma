@@ -1,5 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -11,39 +10,39 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
-  refreshToken  String?
+  id          String    @id
+  shop        String
+  state       String
+  isOnline    Boolean   @default(false)
+  scope       String?
+  expires     DateTime?
+  accessToken String
+  userId      BigInt?
+  firstName   String?
+  lastName    String?
+  email       String?
+  accountOwner Boolean   @default(false)
+  locale      String?
+  collaborator Boolean?  @default(false)
+  emailVerified Boolean? @default(false)
+  refreshToken String?
   refreshTokenExpires DateTime?
 }
 
-// UPDATED MODEL: Supports flexible plans (Days, Weeks, Months)
+// UPDATED MODEL: Now includes 'shop'
 model Subscription {
-  id                 String   @id @default(uuid())
-  type               String   // "product" or "collection"
-  targetId           String
-  targetTitle        String
-  originalPrice      String
+  id             String   @id @default(uuid())
+  shop           String   // <--- ADD THIS LINE (Required for multi-tenancy)
+  type           String   // "product" or "collection"
+  targetId       String
+  targetTitle    String
+  originalPrice  String
 
-  // NEW: This stores your custom plans as a JSON string
-  // Example: '[{"interval":"DAY", "intervalCount":4, "discount":10}, ...]'
-  plansData          String   
+  // Stores your custom plans as a JSON string
+  plansData      String   
 
-  shopifyGroupId     String?
-  shopifyPlanIds     String?  // Stored as JSON string
-  enabled            Boolean  @default(true)
-  createdAt          DateTime @default(now())
+  shopifyGroupId String?
+  shopifyPlanIds String?  
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
 }
