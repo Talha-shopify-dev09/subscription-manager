@@ -41,6 +41,13 @@ export async function loader({ request }) {
     );
 
     const responseJson = await response.json();
+
+    // Check for GraphQL Errors inside the response
+    if (responseJson.errors) {
+       console.error("GraphQL Errors:", responseJson.errors);
+       return Response.json({ customer: null, contracts: [], error: JSON.stringify(responseJson.errors) });
+    }
+
     const customer = responseJson.data?.customer;
 
     return Response.json({ 
@@ -49,9 +56,13 @@ export async function loader({ request }) {
     });
 
   } catch (error) {
-    // If it crashes, log it and return an empty state instead of breaking the page
+    // If it crashes, log it and return the REAL error message
     console.error("Portal Loader Error:", error);
-    return Response.json({ customer: null, contracts: [], error: true });
+    return Response.json({ 
+      customer: null, 
+      contracts: [], 
+      error: error.message || JSON.stringify(error) 
+    });
   }
 }
 
@@ -89,7 +100,7 @@ export async function action({ request }) {
     return Response.json({ success: true });
 
   } catch (err) {
-    return Response.json({ error: "Action Error" });
+    return Response.json({ error: "Action Error: " + err.message });
   }
 }
 
@@ -101,9 +112,10 @@ export default function CustomerPortal() {
   // Handle case where loader crashed gracefully
   if (data?.error) {
     return (
-      <div style={{ padding: "20px", textAlign: "center", color: "red" }}>
+      <div style={{ padding: "20px", textAlign: "center", color: "red", border: "2px solid red", margin: "20px" }}>
         <h3>System Error</h3>
-        <p>Could not load subscriptions. Please contact support.</p>
+        <p><strong>Error Details:</strong> {data.error}</p>
+        <p><small>Please check your shopify.app.toml scopes.</small></p>
       </div>
     );
   }
