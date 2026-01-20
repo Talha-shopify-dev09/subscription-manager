@@ -3,7 +3,7 @@ import { useFetcher, Link, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import {
-  AppProvider, // <--- Key Import
+  AppProvider,
   Page,
   Layout,
   Text,
@@ -15,7 +15,7 @@ import {
   List,
   Link as PolarisLink,
 } from "@shopify/polaris";
-import enTranslations from "@shopify/polaris/locales/en.json"; // <--- Key Import
+import enTranslations from "@shopify/polaris/locales/en.json";
 
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
@@ -194,6 +194,23 @@ export default function Index() {
                   <InlineGrid>
                       <Link to="/app/subscriptions">
                       <Button variant="primary">Manage Subscriptions</Button>
+                      </Link>
+                  </InlineGrid>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+
+            {/* --- NEW: BUNDLE MANAGER LINK --- */}
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="h2" variant="headingMd">🎁 Fixed Bundles</Text>
+                  <Text as="p">
+                    Create product bundles (e.g. "Snowboard + Boots") to sell together as a single unit.
+                  </Text>
+                  <InlineGrid>
+                      <Link to="/app/bundles">
+                      <Button>Manage Bundles</Button>
                       </Link>
                   </InlineGrid>
                 </BlockStack>

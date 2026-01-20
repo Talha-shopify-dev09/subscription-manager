@@ -29,10 +29,10 @@ model Session {
   refreshTokenExpires DateTime?
 }
 
-// UPDATED MODEL: Now includes 'shop'
+// SUBSCRIPTION MODEL
 model Subscription {
   id             String   @id @default(uuid())
-  shop           String   // <--- ADD THIS LINE (Required for multi-tenancy)
+  shop           String
   type           String   // "product" or "collection"
   targetId       String
   targetTitle    String
@@ -45,4 +45,15 @@ model Subscription {
   shopifyPlanIds String?  
   enabled        Boolean  @default(true)
   createdAt      DateTime @default(now())
+}
+
+// --- NEW: BUNDLE MODEL ---
+model Bundle {
+  id          String   @id @default(uuid())
+  shop        String
+  title       String
+  price       String?  // Optional fixed price for the whole bundle
+  discount    String?  // Optional percentage off
+  productIds  String   // We will store the list of Product IDs here as a JSON string
+  createdAt   DateTime @default(now())
 }
