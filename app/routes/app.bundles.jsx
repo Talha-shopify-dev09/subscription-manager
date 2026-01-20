@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useLoaderData, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
+  AppProvider, // <--- ADDED
   Page, Layout, Card, Button, Text, TextField, BlockStack,
   InlineStack, IndexTable, EmptyState, Badge
 } from "@shopify/polaris";
-import { useAppBridge } from "@shopify/app-bridge-react"; // <--- FIX: Import Hook, not Component
+import enTranslations from "@shopify/polaris/locales/en.json"; // <--- ADDED
+import { useAppBridge } from "@shopify/app-bridge-react";
 import db from "../db.server";
 
 // 1. LOADER: Get existing bundles
@@ -38,8 +40,6 @@ export async function action({ request }) {
     const title = formData.get("title");
     const price = formData.get("price");
     const products = JSON.parse(formData.get("products"));
-    // Store just the IDs or the handles depending on your needs. 
-    // Here we store IDs.
     const productIds = products.map(p => p.id); 
 
     await db.bundle.create({
@@ -95,13 +95,12 @@ async function updateShopMetafield(admin, bundles) {
 export default function BundlePage() {
   const { bundles } = useLoaderData();
   const submit = useSubmit();
-  const shopify = useAppBridge(); // <--- FIX: Get the Shopify instance
+  const shopify = useAppBridge();
   
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
 
-  // --- THE FIX: USE FUNCTION INSTEAD OF COMPONENT ---
   const handleSelectProducts = async () => {
     const selection = await shopify.resourcePicker({
       type: "product",
@@ -133,9 +132,7 @@ export default function BundlePage() {
   };
 
   const handleDelete = (id) => {
-    // Standard confirm for now (since we removed the UI modal)
-    // In a real app, use shopify.modal.confirm if desired, but this works fine.
-    if(true) { 
+    if(true) { // Simple confirm
        const data = new FormData();
        data.append("action", "delete");
        data.append("id", id);
@@ -144,64 +141,66 @@ export default function BundlePage() {
   };
 
   return (
-    <Page title="Fixed Bundles">
-      <Layout>
-        <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <Text variant="headingMd">Create New Bundle</Text>
-              
-              <TextField label="Bundle Title" value={title} onChange={setTitle} autoComplete="off" placeholder="e.g. Summer Essentials Kit"/>
-              <TextField label="Bundle Price (Optional)" value={price} onChange={setPrice} autoComplete="off" prefix="$" helpText="Leave empty to use sum of product prices"/>
+    /* --- FIX: Wrapped in AppProvider --- */
+    <AppProvider i18n={enTranslations}>
+      <Page title="Fixed Bundles">
+        <Layout>
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="400">
+                <Text variant="headingMd">Create New Bundle</Text>
+                
+                <TextField label="Bundle Title" value={title} onChange={setTitle} autoComplete="off" placeholder="e.g. Summer Essentials Kit"/>
+                <TextField label="Bundle Price (Optional)" value={price} onChange={setPrice} autoComplete="off" prefix="$" helpText="Leave empty to use sum of product prices"/>
 
-              {/* FIX: Call the function on click */}
-              <Button onClick={handleSelectProducts}>Select Products for Bundle</Button>
-              
-              {selectedProducts.length > 0 && (
-                <BlockStack gap="200">
-                  <Text fontWeight="bold">Selected ({selectedProducts.length}):</Text>
-                  <InlineStack gap="200">
-                    {selectedProducts.map(p => (
-                       <Badge key={p.id} tone="info">{p.title}</Badge>
-                    ))}
-                  </InlineStack>
-                </BlockStack>
+                <Button onClick={handleSelectProducts}>Select Products for Bundle</Button>
+                
+                {selectedProducts.length > 0 && (
+                  <BlockStack gap="200">
+                    <Text fontWeight="bold">Selected ({selectedProducts.length}):</Text>
+                    <InlineStack gap="200">
+                      {selectedProducts.map(p => (
+                         <Badge key={p.id} tone="info">{p.title}</Badge>
+                      ))}
+                    </InlineStack>
+                  </BlockStack>
+                )}
+
+                <InlineStack align="end">
+                  <Button variant="primary" onClick={handleSave}>Save Bundle</Button>
+                </InlineStack>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+
+          <Layout.Section>
+            <Card padding="0">
+              {bundles.length === 0 ? (
+                 <EmptyState heading="No bundles yet" image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png">
+                   <p>Create a bundle to display it on your store.</p>
+                 </EmptyState>
+              ) : (
+                <IndexTable
+                  resourceName={{ singular: 'bundle', plural: 'bundles' }}
+                  itemCount={bundles.length}
+                  headings={[{ title: 'Title' }, { title: 'Products' }, { title: 'Price' }, { title: 'Action' }]}
+                >
+                  {bundles.map((bundle, index) => (
+                    <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>
+                      <IndexTable.Cell><Text fontWeight="bold">{bundle.title}</Text></IndexTable.Cell>
+                      <IndexTable.Cell>{JSON.parse(bundle.productIds).length} items</IndexTable.Cell>
+                      <IndexTable.Cell>{bundle.price ? `$${bundle.price}` : 'Calculated'}</IndexTable.Cell>
+                      <IndexTable.Cell>
+                        <Button tone="critical" onClick={() => handleDelete(bundle.id)}>Delete</Button>
+                      </IndexTable.Cell>
+                    </IndexTable.Row>
+                  ))}
+                </IndexTable>
               )}
-
-              <InlineStack align="end">
-                <Button variant="primary" onClick={handleSave}>Save Bundle</Button>
-              </InlineStack>
-            </BlockStack>
-          </Card>
-        </Layout.Section>
-
-        <Layout.Section>
-          <Card padding="0">
-            {bundles.length === 0 ? (
-               <EmptyState heading="No bundles yet" image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png">
-                 <p>Create a bundle to display it on your store.</p>
-               </EmptyState>
-            ) : (
-              <IndexTable
-                resourceName={{ singular: 'bundle', plural: 'bundles' }}
-                itemCount={bundles.length}
-                headings={[{ title: 'Title' }, { title: 'Products' }, { title: 'Price' }, { title: 'Action' }]}
-              >
-                {bundles.map((bundle, index) => (
-                  <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>
-                    <IndexTable.Cell><Text fontWeight="bold">{bundle.title}</Text></IndexTable.Cell>
-                    <IndexTable.Cell>{JSON.parse(bundle.productIds).length} items</IndexTable.Cell>
-                    <IndexTable.Cell>{bundle.price ? `$${bundle.price}` : 'Calculated'}</IndexTable.Cell>
-                    <IndexTable.Cell>
-                      <Button tone="critical" onClick={() => handleDelete(bundle.id)}>Delete</Button>
-                    </IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
-            )}
-          </Card>
-        </Layout.Section>
-      </Layout>
-    </Page>
+            </Card>
+          </Layout.Section>
+        </Layout>
+      </Page>
+    </AppProvider>
   );
 }
