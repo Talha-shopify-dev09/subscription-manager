@@ -13,38 +13,46 @@ import {
   InlineGrid,
   Box,
   List,
-  // ListItem was removed from here
   Link as PolarisLink,
-  Banner,
-  CodeBlock
 } from "@shopify/polaris";
 
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
 
-  // 1. FETCH SUBSCRIPTION STATS
-  const statsResponse = await admin.graphql(
-    `#graphql
-    query getSubscriptionStats {
-      active: subscriptionContracts(first: 200, query: "status:ACTIVE") {
-        edges { node { id } }
-      }
-      cancelled: subscriptionContracts(first: 200, query: "status:CANCELLED") {
-        edges { node { id } }
-      }
-      paused: subscriptionContracts(first: 200, query: "status:PAUSED") {
-        edges { node { id } }
-      }
-    }`
-  );
+  // 1. FETCH SUBSCRIPTION STATS (Wrapped in Try/Catch for Safety)
+  try {
+    const statsResponse = await admin.graphql(
+      `#graphql
+      query getSubscriptionStats {
+        active: subscriptionContracts(first: 200, query: "status:ACTIVE") {
+          edges { node { id } }
+        }
+        cancelled: subscriptionContracts(first: 200, query: "status:CANCELLED") {
+          edges { node { id } }
+        }
+        paused: subscriptionContracts(first: 200, query: "status:PAUSED") {
+          edges { node { id } }
+        }
+      }`
+    );
 
-  const statsJson = await statsResponse.json();
+    const statsJson = await statsResponse.json();
 
-  return {
-    activeCount: statsJson.data.active.edges.length,
-    cancelledCount: statsJson.data.cancelled.edges.length,
-    pausedCount: statsJson.data.paused.edges.length,
-  };
+    // SAFETY CHECK: If Shopify returns an error (e.g. missing scopes), return 0s instead of crashing
+    if (statsJson.errors || !statsJson.data) {
+      console.log("⚠️ API Error or Missing Scopes:", statsJson.errors);
+      return { activeCount: 0, cancelledCount: 0, pausedCount: 0 };
+    }
+
+    return {
+      activeCount: statsJson.data.active.edges.length,
+      cancelledCount: statsJson.data.cancelled.edges.length,
+      pausedCount: statsJson.data.paused.edges.length,
+    };
+  } catch (error) {
+    console.error("🔥 Loader Crash:", error);
+    return { activeCount: 0, cancelledCount: 0, pausedCount: 0 };
+  }
 };
 
 export const action = async ({ request }) => {
