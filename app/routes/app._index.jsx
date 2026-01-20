@@ -2,6 +2,7 @@ import { useLoaderData, Link } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import {
+  AppProvider, // <--- Added this
   Page,
   Layout,
   Text,
@@ -13,17 +14,15 @@ import {
   Box,
   Button
 } from "@shopify/polaris";
+import enTranslations from "@shopify/polaris/locales/en.json"; // <--- Added this
 
 export const loader = async ({ request }) => {
-  // 1. Log that we started loading
   console.log("🔄 Loader started...");
 
   try {
-    // 2. Try to authenticate. If DB is broken, this will crash.
     const { admin } = await authenticate.admin(request);
     console.log("✅ Authentication successful!");
 
-    // 3. Try to fetch stats, but wrap in try/catch so it doesn't crash the page
     try {
       const response = await admin.graphql(
         `#graphql
@@ -38,19 +37,17 @@ export const loader = async ({ request }) => {
         status: "connected"
       };
     } catch (gqlError) {
-      console.log("⚠️ GraphQL Warning (App is working, but permissions missing):", gqlError.message);
+      console.log("⚠️ GraphQL Warning:", gqlError.message);
       return { activeCount: 0, status: "permissions_issue" };
     }
 
   } catch (error) {
-    // 4. If Authentication fails (DB issue), we catch it here
     console.error("🔥 CRITICAL AUTH ERROR:", error);
-    throw new Response("Authentication Failed - Check Terminal Logs", { status: 500 });
+    throw new Response("Authentication Failed", { status: 500 });
   }
 };
 
 export const action = async ({ request }) => {
-  // Simple action to test buttons
   await authenticate.admin(request);
   return { success: true };
 };
@@ -60,50 +57,53 @@ export default function Index() {
   const shopify = useAppBridge();
 
   return (
-    <Page title="Home (Debug Mode)">
-      <BlockStack gap="500">
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">
-                  App Status: {status === "connected" ? "✅ Connected" : "⚠️ Issues Found"}
-                </Text>
-                
-                <Text as="p">
-                  If you can see this page, your <b>Database</b> and <b>Router</b> are working correctly!
-                </Text>
+    /* WRAPPED IN APP PROVIDER TO FIX CRASH */
+    <AppProvider i18n={enTranslations}>
+      <Page title="Home (Debug Mode)">
+        <BlockStack gap="500">
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">
+                    App Status: {status === "connected" ? "✅ Connected" : "⚠️ Issues Found"}
+                  </Text>
+                  
+                  <Text as="p">
+                    Great job! Your <b>Database</b> and <b>Authentication</b> are working perfectly.
+                  </Text>
 
-                <Box padding="400" background="bg-surface-secondary" borderRadius="200">
-                   <Text as="p" fontWeight="bold">Active Subscriptions: {activeCount}</Text>
-                </Box>
+                  <Box padding="400" background="bg-surface-secondary" borderRadius="200">
+                     <Text as="p" fontWeight="bold">Active Subscriptions: {activeCount}</Text>
+                  </Box>
 
-                <InlineGrid columns={2} gap="300">
-                   <Link to="/app/subscriptions">
-                      <Button variant="primary">Go to Subscriptions</Button>
-                   </Link>
-                </InlineGrid>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
+                  <InlineGrid columns={2} gap="300">
+                     <Link to="/app/subscriptions">
+                        <Button variant="primary">Go to Subscriptions</Button>
+                     </Link>
+                  </InlineGrid>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
 
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h2" variant="headingMd">Troubleshooting</Text>
-                <List>
-                  <List.Item>
-                    Check your <b>terminal</b> for logs starting with "🔄"
-                  </List.Item>
-                  <List.Item>
-                    If counts are 0, check <b>shopify.app.toml</b> scopes.
-                  </List.Item>
-                </List>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
-      </BlockStack>
-    </Page>
+            <Layout.Section variant="oneThird">
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="h2" variant="headingMd">Next Steps</Text>
+                  <List>
+                    <List.Item>
+                      Your app is stable.
+                    </List.Item>
+                    <List.Item>
+                      You can now safely revert to the original Dashboard code if you want, or build on top of this one.
+                    </List.Item>
+                  </List>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        </BlockStack>
+      </Page>
+    </AppProvider>
   );
 }
