@@ -13,7 +13,7 @@ import {
   InlineGrid,
   Box,
   List,
-  ListItem,
+  // ListItem was removed from here
   Link as PolarisLink,
   Banner,
   CodeBlock
@@ -262,12 +262,12 @@ export default function Index() {
                     <BlockStack gap="200">
                         <Text as="h2" variant="headingMd">Next steps</Text>
                         <List>
-                            <ListItem>
+                            <List.Item>
                                 Build an <PolarisLink url="https://shopify.dev/docs/apps/getting-started/build-app-example" target="_blank">example app</PolarisLink>
-                            </ListItem>
-                            <ListItem>
+                            </List.Item>
+                            <List.Item>
                                 Explore API with <PolarisLink url="https://shopify.dev/docs/apps/tools/graphiql-admin-api" target="_blank">GraphiQL</PolarisLink>
-                            </ListItem>
+                            </List.Item>
                         </List>
                     </BlockStack>
                 </Card>
