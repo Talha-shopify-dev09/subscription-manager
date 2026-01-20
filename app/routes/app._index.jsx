@@ -1,105 +1,287 @@
-import { useLoaderData, Link } from "react-router";
+import { useEffect } from "react";
+import { useFetcher, Link, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import {
-  AppProvider, // <--- Added this
+  AppProvider, // <--- Key Import
   Page,
   Layout,
   Text,
   Card,
+  Button,
   BlockStack,
-  List,
-  Link as PolarisLink,
   InlineGrid,
   Box,
-  Button
+  List,
+  Link as PolarisLink,
 } from "@shopify/polaris";
-import enTranslations from "@shopify/polaris/locales/en.json"; // <--- Added this
+import enTranslations from "@shopify/polaris/locales/en.json"; // <--- Key Import
 
 export const loader = async ({ request }) => {
-  console.log("🔄 Loader started...");
+  const { admin } = await authenticate.admin(request);
 
+  // 1. FETCH SUBSCRIPTION STATS (With Safety Check)
   try {
-    const { admin } = await authenticate.admin(request);
-    console.log("✅ Authentication successful!");
+    const statsResponse = await admin.graphql(
+      `#graphql
+      query getSubscriptionStats {
+        active: subscriptionContracts(first: 200, query: "status:ACTIVE") {
+          edges { node { id } }
+        }
+        cancelled: subscriptionContracts(first: 200, query: "status:CANCELLED") {
+          edges { node { id } }
+        }
+        paused: subscriptionContracts(first: 200, query: "status:PAUSED") {
+          edges { node { id } }
+        }
+      }`
+    );
 
-    try {
-      const response = await admin.graphql(
-        `#graphql
-        query getStats {
-          active: subscriptionContracts(first: 1, query: "status:ACTIVE") { edges { node { id } } }
-        }`
-      );
-      const data = await response.json();
-      console.log("✅ GraphQL fetch successful");
-      return { 
-        activeCount: data.data?.active?.edges?.length || 0,
-        status: "connected"
-      };
-    } catch (gqlError) {
-      console.log("⚠️ GraphQL Warning:", gqlError.message);
-      return { activeCount: 0, status: "permissions_issue" };
+    const statsJson = await statsResponse.json();
+
+    // Prevent crash if scopes are missing or API fails
+    if (statsJson.errors || !statsJson.data) {
+      console.log("⚠️ API Error:", statsJson.errors);
+      return { activeCount: 0, cancelledCount: 0, pausedCount: 0 };
     }
 
+    return {
+      activeCount: statsJson.data.active.edges.length,
+      cancelledCount: statsJson.data.cancelled.edges.length,
+      pausedCount: statsJson.data.paused.edges.length,
+    };
   } catch (error) {
-    console.error("🔥 CRITICAL AUTH ERROR:", error);
-    throw new Response("Authentication Failed", { status: 500 });
+    console.error("🔥 Loader Crash:", error);
+    return { activeCount: 0, cancelledCount: 0, pausedCount: 0 };
   }
 };
 
 export const action = async ({ request }) => {
-  await authenticate.admin(request);
-  return { success: true };
+  const { admin } = await authenticate.admin(request);
+  const color = ["Red", "Orange", "Yellow", "Green"][
+    Math.floor(Math.random() * 4)
+  ];
+  const response = await admin.graphql(
+    `#graphql
+      mutation populateProduct($product: ProductCreateInput!) {
+        productCreate(product: $product) {
+          product {
+            id
+            title
+            handle
+            status
+            variants(first: 10) {
+              edges {
+                node {
+                  id
+                  price
+                  barcode
+                  createdAt
+                }
+              }
+            }
+          }
+        }
+      }`,
+    {
+      variables: {
+        product: {
+          title: `${color} Snowboard`,
+        },
+      },
+    },
+  );
+  const responseJson = await response.json();
+  const product = responseJson.data.productCreate.product;
+  const variantId = product.variants.edges[0].node.id;
+  const variantResponse = await admin.graphql(
+    `#graphql
+    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+        productVariants {
+          id
+          price
+          barcode
+          createdAt
+        }
+      }
+    }`,
+    {
+      variables: {
+        productId: product.id,
+        variants: [{ id: variantId, price: "100.00" }],
+      },
+    },
+  );
+  const variantResponseJson = await variantResponse.json();
+
+  return {
+    product: responseJson.data.productCreate.product,
+    variant: variantResponseJson.data.productVariantsBulkUpdate.productVariants,
+  };
 };
 
 export default function Index() {
-  const { activeCount, status } = useLoaderData();
+  const { activeCount, cancelledCount, pausedCount } = useLoaderData();
+  const fetcher = useFetcher();
   const shopify = useAppBridge();
+  const isLoading =
+    ["loading", "submitting"].includes(fetcher.state) &&
+    fetcher.formMethod === "POST";
+
+  useEffect(() => {
+    if (fetcher.data?.product?.id) {
+      shopify.toast.show("Product created");
+    }
+  }, [fetcher.data?.product?.id, shopify]);
+
+  const generateProduct = () => fetcher.submit({}, { method: "POST" });
 
   return (
-    /* WRAPPED IN APP PROVIDER TO FIX CRASH */
     <AppProvider i18n={enTranslations}>
-      <Page title="Home (Debug Mode)">
+      <Page title="Shopify App Template">
         <BlockStack gap="500">
+          
+          {/* --- ANALYTICS DASHBOARD --- */}
           <Layout>
             <Layout.Section>
               <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">
-                    App Status: {status === "connected" ? "✅ Connected" : "⚠️ Issues Found"}
-                  </Text>
-                  
+                  <BlockStack gap="200">
+                      <Text as="h2" variant="headingSm">Dashboard Overview</Text>
+                      <InlineGrid columns={3} gap="400">
+                          {/* Active Card */}
+                          <Box background="bg-surface-secondary" padding="400" borderRadius="200">
+                          <BlockStack gap="200">
+                              <Text as="h3" variant="headingXs" tone="subdued">Active Subscribers</Text>
+                              <Text as="p" variant="headingXl" fontWeight="bold" tone="success">
+                              {activeCount}
+                              </Text>
+                          </BlockStack>
+                          </Box>
+
+                          {/* Cancelled Card */}
+                          <Box background="bg-surface-secondary" padding="400" borderRadius="200">
+                          <BlockStack gap="200">
+                              <Text as="h3" variant="headingXs" tone="subdued">Cancelled</Text>
+                              <Text as="p" variant="headingXl" fontWeight="bold" tone="critical">
+                              {cancelledCount}
+                              </Text>
+                          </BlockStack>
+                          </Box>
+
+                          {/* Paused Card */}
+                          <Box background="bg-surface-secondary" padding="400" borderRadius="200">
+                          <BlockStack gap="200">
+                              <Text as="h3" variant="headingXs" tone="subdued">Paused</Text>
+                              <Text as="p" variant="headingXl" fontWeight="bold" tone="caution">
+                              {pausedCount}
+                              </Text>
+                          </BlockStack>
+                          </Box>
+                      </InlineGrid>
+                  </BlockStack>
+              </Card>
+            </Layout.Section>
+
+            {/* --- SUBSCRIPTION MANAGER LINK --- */}
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="h2" variant="headingMd">📦 Subscription Manager</Text>
                   <Text as="p">
-                    Great job! Your <b>Database</b> and <b>Authentication</b> are working perfectly.
+                    Manage subscription plans for your products. Set different pricing for 1, 2, and 3-month subscriptions.
                   </Text>
-
-                  <Box padding="400" background="bg-surface-secondary" borderRadius="200">
-                     <Text as="p" fontWeight="bold">Active Subscriptions: {activeCount}</Text>
-                  </Box>
-
-                  <InlineGrid columns={2} gap="300">
-                     <Link to="/app/subscriptions">
-                        <Button variant="primary">Go to Subscriptions</Button>
-                     </Link>
+                  <InlineGrid>
+                      <Link to="/app/subscriptions">
+                      <Button variant="primary">Manage Subscriptions</Button>
+                      </Link>
                   </InlineGrid>
                 </BlockStack>
               </Card>
             </Layout.Section>
 
-            <Layout.Section variant="oneThird">
+            {/* --- TEMPLATE ACTIONS --- */}
+            <Layout.Section>
               <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">Next Steps</Text>
-                  <List>
-                    <List.Item>
-                      Your app is stable.
-                    </List.Item>
-                    <List.Item>
-                      You can now safely revert to the original Dashboard code if you want, or build on top of this one.
-                    </List.Item>
-                  </List>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">Product Generator</Text>
+                  <Text as="p">
+                    Generate a product with GraphQL and get the JSON output for that product. 
+                    Learn more about the <PolarisLink url="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate" target="_blank">productCreate</PolarisLink> mutation.
+                  </Text>
+                  
+                  <InlineGrid gap="300" columns={2}>
+                    <Button 
+                      loading={isLoading} 
+                      onClick={generateProduct}
+                    >
+                      Generate a product
+                    </Button>
+                    
+                    {fetcher.data?.product && (
+                      <Button
+                        variant="plain"
+                        onClick={() => {
+                          shopify.intents.invoke?.("edit:shopify/Product", {
+                            value: fetcher.data?.product?.id,
+                          });
+                        }}
+                      >
+                        Edit product
+                      </Button>
+                    )}
+                  </InlineGrid>
+
+                  {fetcher.data?.product && (
+                    <BlockStack gap="200">
+                      <Text as="h3" variant="headingSm">Result</Text>
+                      <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                         <pre style={{margin: 0, overflowX: "scroll"}}>
+                             {JSON.stringify(fetcher.data.product, null, 2)}
+                         </pre>
+                      </Box>
+                    </BlockStack>
+                  )}
                 </BlockStack>
               </Card>
+            </Layout.Section>
+            
+            {/* --- SIDEBAR --- */}
+            <Layout.Section variant="oneThird">
+              <BlockStack gap="500">
+                  <Card>
+                      <BlockStack gap="200">
+                          <Text as="h2" variant="headingMd">App template specs</Text>
+                          <BlockStack gap="200">
+                              <InlineGrid columns="1fr auto">
+                                  <Text as="span" fontWeight="bold">Framework</Text>
+                                  <PolarisLink url="https://reactrouter.com/" target="_blank">React Router</PolarisLink>
+                              </InlineGrid>
+                              <InlineGrid columns="1fr auto">
+                                  <Text as="span" fontWeight="bold">Interface</Text>
+                                  <PolarisLink url="https://polaris.shopify.com" target="_blank">Polaris</PolarisLink>
+                              </InlineGrid>
+                              <InlineGrid columns="1fr auto">
+                                  <Text as="span" fontWeight="bold">API</Text>
+                                  <PolarisLink url="https://shopify.dev/docs/api/admin-graphql" target="_blank">GraphQL</PolarisLink>
+                              </InlineGrid>
+                          </BlockStack>
+                      </BlockStack>
+                  </Card>
+                  <Card>
+                      <BlockStack gap="200">
+                          <Text as="h2" variant="headingMd">Next steps</Text>
+                          <List>
+                              <List.Item>
+                                  Build an <PolarisLink url="https://shopify.dev/docs/apps/getting-started/build-app-example" target="_blank">example app</PolarisLink>
+                              </List.Item>
+                              <List.Item>
+                                  Explore API with <PolarisLink url="https://shopify.dev/docs/apps/tools/graphiql-admin-api" target="_blank">GraphiQL</PolarisLink>
+                              </List.Item>
+                          </List>
+                      </BlockStack>
+                  </Card>
+              </BlockStack>
             </Layout.Section>
           </Layout>
         </BlockStack>
