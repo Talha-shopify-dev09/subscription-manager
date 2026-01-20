@@ -12,7 +12,6 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import { TitleBar } from "@shopify/app-bridge-react";
 import db from "../db.server"; 
 
-// --- LOADER: Fetch Data ---
 // --- LOADER: Fetch Data (SECURED) ---
 export async function loader({ request }) {
   // 1. Get the Session to identify the shop
@@ -58,7 +57,7 @@ export async function loader({ request }) {
     productsCount: edge.node.productsCount.count
   }));
   
-  // 2. FILTER SUBSCRIPTIONS BY SHOP (Critical Fix)
+  // 2. FILTER SUBSCRIPTIONS BY SHOP
   const subscriptions = await db.subscription.findMany({
     where: {
       shop: session.shop, // <--- Only fetch for the current store
@@ -71,7 +70,8 @@ export async function loader({ request }) {
 
 // --- ACTION: Handle Save/Delete ---
 export async function action({ request }) {
-  const { admin } = await authenticate.admin(request);
+  // FIX: Destructure session here to get the shop name
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const actionType = formData.get("action");
   
@@ -124,17 +124,14 @@ export async function action({ request }) {
         }
       };
 
-      // --- LOGIC CHANGE START ---
-      // If user provided a Max Cycle number, add it to the policy
+      // Max Cycles Logic
       if (plan.maxCycles && parseInt(plan.maxCycles) > 0) {
         billingPolicy.recurring.maxCycles = parseInt(plan.maxCycles);
       }
-      // --- LOGIC CHANGE END ---
 
       // Generate Name
       let planName = `Deliver every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s)`;
       
-      // Update name so customer knows it ends
       if(plan.maxCycles && parseInt(plan.maxCycles) > 0) {
         planName += ` (Ends after ${plan.maxCycles} payments)`;
       }
@@ -244,7 +241,11 @@ export async function action({ request }) {
     // Save to DB
     await db.subscription.create({
       data: {
-        type, targetId, targetTitle, originalPrice: originalPrice || "0",
+        shop: session.shop, // <--- FIX: Added shop here
+        type, 
+        targetId, 
+        targetTitle, 
+        originalPrice: originalPrice || "0",
         plansData: JSON.stringify(plans),
         shopifyGroupId: newGroup.id,
         shopifyPlanIds: JSON.stringify(shopifyPlanIdsMap),
@@ -399,8 +400,8 @@ export default function Subscriptions() {
                     
                     {/* NEW FIELD: MAX CYCLES */}
                     <InlineStack gap="200" align="center">
-                       <div style={{flex: 1}}>
-                         <TextField 
+                        <div style={{flex: 1}}>
+                          <TextField 
                             label="Max Charges (Optional)" 
                             type="number" 
                             value={plan.maxCycles} 
@@ -408,8 +409,8 @@ export default function Subscriptions() {
                             helpText="Leave blank for 'Until Cancelled' (Infinite)"
                             placeholder="∞"
                             autoComplete="off"
-                         />
-                       </div>
+                          />
+                        </div>
                     </InlineStack>
                   </BlockStack>
                 </Box>
