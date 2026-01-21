@@ -9,18 +9,17 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import db from "../db.server";
 
-// 1. LOADER: Optimized & Safe Currency Extraction
+// 1. LOADER: Fixed GraphQL Query
 export async function loader({ request }) {
   const { session, admin } = await authenticate.admin(request);
   
-  // Fetch Shop Info (ID + Currency) in one go
   const shopResponse = await admin.graphql(
     `#graphql
     query {
       shop {
         id
         currencyFormats {
-          moneyInEmailsFormat // Uses plain text (e.g. "${{amount}}"), avoiding HTML issues
+          moneyInEmailsFormat
         }
       }
     }`
@@ -29,7 +28,7 @@ export async function loader({ request }) {
   const shopJson = await shopResponse.json();
   const shopId = shopJson.data?.shop?.id;
   
-  // Robust Symbol Extraction: Remove {{amount}} and trim whitespace
+  // Safe Symbol Extraction
   const rawFormat = shopJson.data?.shop?.currencyFormats?.moneyInEmailsFormat || "${{amount}}";
   const currencySymbol = rawFormat.replace(/\{\{amount\}\}/g, "").trim() || "$";
 
@@ -48,16 +47,14 @@ export async function action({ request }) {
   const actionType = formData.get("action");
 
   try {
-    // --- DELETE FLOW (Cleans up Shopify Discount) ---
+    // --- DELETE FLOW ---
     if (actionType === "delete") {
         const bundleId = formData.get("id");
         
-        // 1. Find the bundle to get the Discount ID
+        // 1. Find Bundle to get Discount ID
         const bundle = await db.bundle.findUnique({ where: { id: bundleId } });
         
         if (bundle?.discountId) {
-            console.log("Deleting Shopify Discount:", bundle.discountId);
-            
             // 2. Delete from Shopify
             const deleteResponse = await admin.graphql(
                 `#graphql
@@ -68,29 +65,21 @@ export async function action({ request }) {
                 }`,
                 { variables: { id: bundle.discountId } }
             );
-            
-            // We log errors but don't stop DB deletion (orphans in Shopify are better than broken app state)
-            const deleteJson = await deleteResponse.json();
-            if (deleteJson.data?.discountAutomaticDelete?.userErrors?.length > 0) {
-                console.warn("Failed to delete discount:", deleteJson.data.discountAutomaticDelete.userErrors);
-            }
         }
 
         // 3. Delete from DB
         await db.bundle.delete({ where: { id: bundleId } });
         
-        // 4. Sync Metafields
         await syncMetafields(admin, session.shop);
         
-        return { success: true, message: "Bundle and Discount deleted" };
+        return { success: true };
     }
 
-    // --- CREATE FLOW (Captures Discount ID) ---
+    // --- CREATE FLOW ---
     if (actionType === "create") {
         const title = formData.get("title");
         const products = JSON.parse(formData.get("products")); 
         
-        // A. Calculations
         let totalOriginal = 0;
         let totalBundle = 0;
         const productIds = [];
@@ -104,7 +93,7 @@ export async function action({ request }) {
         const discountValue = totalOriginal - totalBundle;
         let createdDiscountId = null;
 
-        // B. Add Tag (Required for tracking logic if needed, or just visual)
+        // A. Add Tags
         for (const pid of productIds) {
             await admin.graphql(
                 `#graphql
@@ -117,14 +106,14 @@ export async function action({ request }) {
             );
         }
 
-        // C. Create Automatic Discount
+        // B. Create Automatic Discount
         if (discountValue > 0) {
             const response = await admin.graphql(
                 `#graphql
                 mutation discountAutomaticBasicCreate($automaticBasicDiscount: DiscountAutomaticBasicInput!) {
                   discountAutomaticBasicCreate(automaticBasicDiscount: $automaticBasicDiscount) {
                     automaticDiscountNode {
-                       id  # <--- CRITICAL: Capture the ID
+                       id
                        automaticDiscount {
                          ... on DiscountAutomaticBasic { title }
                        }
@@ -157,30 +146,25 @@ export async function action({ request }) {
             );
 
             const responseJson = await response.json();
-            
-            // STRICT ERROR CHECKING
             const errors = responseJson.data?.discountAutomaticBasicCreate?.userErrors || [];
             if (errors.length > 0) {
-                console.error("Discount Creation Failed:", errors);
                 return { error: `Shopify API Error: ${errors[0].message}` };
             }
-
             createdDiscountId = responseJson.data?.discountAutomaticBasicCreate?.automaticDiscountNode?.id;
         }
 
-        // D. Save to DB with Discount ID
+        // C. Save to DB
         await db.bundle.create({
             data: {
                 shop: session.shop,
                 title,
                 price: totalBundle.toFixed(2),
                 productIds: JSON.stringify(products),
-                discountId: createdDiscountId // <--- Store it!
+                discountId: createdDiscountId
             }
         });
 
         await syncMetafields(admin, session.shop);
-        
         return { success: true };
     }
   } catch (error) {
@@ -190,11 +174,8 @@ export async function action({ request }) {
   return null;
 }
 
-// Helper: Syncs Bundles to Shop Metafield (Optimized)
+// Sync Metafields Helper
 async function syncMetafields(admin, shopDomain) {
-  // We need to fetch the Shop ID here if not passed, but usually easiest to fetch inside action
-  // For safety/speed, we'll do a quick fetch or pass it if we refactor. 
-  // Given the structure, let's fetch it cleanly.
   const shopQ = await admin.graphql(`{ shop { id } }`);
   const shopId = (await shopQ.json()).data.shop.id;
 
@@ -228,7 +209,7 @@ async function syncMetafields(admin, shopDomain) {
   );
 }
 
-// 3. UI COMPONENT (Standard, using the robust currencySymbol)
+// 3. UI COMPONENT
 export default function BundlePage() {
   const { bundles, currencySymbol } = useLoaderData();
   const actionData = useActionData();
@@ -269,17 +250,23 @@ export default function BundlePage() {
     data.append("action", "create");
     data.append("title", title);
     data.append("products", JSON.stringify(selectedProducts)); 
-    
     submit(data, { method: "POST" });
   };
 
+  // Reset loading state if error comes back
+  if (loading && actionData?.error) {
+     setLoading(false);
+  }
   // Reset UI on success
-  if (!loading && actionData?.success) {
-      // Logic to clear state handled by re-render usually, but can explicitly clear here if strict
+  if (loading && actionData?.success) {
+     setLoading(false);
+     setTitle("");
+     setSelectedProducts([]);
+     shopify.toast.show("Bundle Saved!");
   }
 
   const handleDelete = (id) => {
-      if(confirm("Are you sure? This will delete the Shopify discount as well.")) {
+      if(confirm("Delete bundle and remove discount?")) {
         const data = new FormData();
         data.append("action", "delete");
         data.append("id", id);
