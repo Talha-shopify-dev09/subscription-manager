@@ -4,8 +4,8 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import {
   AppProvider, Page, Layout, Card, Button, Text, TextField, Select,
-  BlockStack, InlineStack, Banner, Badge, IndexTable, Modal, FormLayout,
-  EmptyState, Divider, Box, ResourceList, ResourceItem, Thumbnail, Spinner
+  BlockStack, InlineStack, Badge, IndexTable, Modal, FormLayout,
+  EmptyState, Divider, Box, Thumbnail, Spinner
 } from "@shopify/polaris";
 import { DeleteIcon, PlusIcon } from "@shopify/polaris-icons";
 import enTranslations from "@shopify/polaris/locales/en.json";
@@ -15,43 +15,7 @@ import db from "../db.server";
 // --- LOADER ---
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
-  const url = new URL(request.url);
-  const collectionIdToFetch = url.searchParams.get("collection_id");
 
-  // A. AJAX: Fetch Products for a specific Collection
-  if (collectionIdToFetch) {
-      try {
-        const response = await admin.graphql(
-          `#graphql
-          query getCollectionProducts($id: ID!) {
-            collection(id: $id) {
-              products(first: 250) {
-                edges {
-                  node {
-                    id
-                    title
-                    images(first: 1) { nodes { originalSrc } }
-                  }
-                }
-              }
-            }
-          }`,
-          { variables: { id: collectionIdToFetch } }
-        );
-        const json = await response.json();
-        const products = json.data?.collection?.products?.edges.map(e => ({
-            id: e.node.id,
-            title: e.node.title,
-            image: e.node.images.nodes[0]?.originalSrc
-        })) || [];
-        return { collectionProducts: products };
-      } catch (err) {
-        console.error("Loader Error:", err);
-        return { collectionProducts: [] };
-      }
-  }
-
-  // B. STANDARD LOAD
   const response = await admin.graphql(
     `#graphql
       query {
@@ -85,7 +49,51 @@ export async function action({ request }) {
   const formData = await request.formData();
   const actionType = formData.get("action");
   
-  // 1. DELETE
+  // 1. FETCH COLLECTION PRODUCTS (Pagination Support)
+  if (actionType === "fetchCollectionProducts") {
+    const collectionId = formData.get("collectionId");
+    try {
+      let allProducts = [];
+      let hasNextPage = true;
+      let cursor = null;
+      
+      // Loop until we get EVERY product
+      while (hasNextPage) {
+        const response = await admin.graphql(
+          `#graphql
+          query getCollectionProducts($id: ID!, $cursor: String) {
+            collection(id: $id) {
+              products(first: 250, after: $cursor) {
+                pageInfo { hasNextPage endCursor }
+                edges { node { id title images(first: 1) { nodes { originalSrc } } } }
+              }
+            }
+          }`,
+          { variables: { id: collectionId, cursor } }
+        );
+        
+        const json = await response.json();
+        const productsData = json.data?.collection?.products;
+        
+        if (productsData) {
+          const products = productsData.edges.map(e => ({
+            id: e.node.id, title: e.node.title, image: e.node.images.nodes[0]?.originalSrc
+          }));
+          allProducts = [...allProducts, ...products];
+          hasNextPage = productsData.pageInfo.hasNextPage;
+          cursor = productsData.pageInfo.endCursor;
+        } else {
+          hasNextPage = false;
+        }
+      }
+      return Response.json({ collectionProducts: allProducts, totalCount: allProducts.length });
+    } catch (error) {
+      console.error("Collection Fetch Error:", error);
+      return Response.json({ error: "Failed to fetch collection" }, { status: 500 });
+    }
+  }
+  
+  // 2. DELETE
   if (actionType === "delete") {
     const id = formData.get("id");
     const shopifyGroupId = formData.get("shopifyGroupId");
@@ -98,13 +106,13 @@ export async function action({ request }) {
           }`,
           { variables: { id: shopifyGroupId } }
         );
-      } catch(e) { console.error(e); }
+      } catch(e) { console.error("Delete Error", e); }
     }
     await db.subscription.delete({ where: { id } });
     return Response.json({ success: true });
   }
 
-  // 2. CREATE
+  // 3. CREATE SUBSCRIPTION
   if (actionType === "create") {
     const type = formData.get("type");
     const targetTitle = formData.get("targetTitle");
@@ -112,7 +120,9 @@ export async function action({ request }) {
     const plans = JSON.parse(formData.get("plans") || "[]");
     const targetIds = JSON.parse(formData.get("targetIds") || "[]");
 
-    // Construct Plans
+    if (targetIds.length === 0) return Response.json({ error: "No products selected" }, { status: 400 });
+
+    // A. Construct Plans
     const sellingPlansToCreate = plans.map((plan, index) => {
       const billingPolicy = {
         recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) }
@@ -132,14 +142,12 @@ export async function action({ request }) {
         category: "SUBSCRIPTION", 
         billingPolicy,
         deliveryPolicy: { recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) } },
-        pricingPolicies: [{
-          fixed: { adjustmentType: "PERCENTAGE", adjustmentValue: { percentage: parseFloat(plan.discount) } }
-        }]
+        pricingPolicies: [{ fixed: { adjustmentType: "PERCENTAGE", adjustmentValue: { percentage: parseFloat(plan.discount) } } }]
       };
     });
 
     try {
-      // Create Group (Removed 'productCount' to fix crash)
+      // B. Create Group (WITHOUT attaching products yet - this prevents the "first one only" bug)
       const response = await admin.graphql(
         `#graphql
         mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!) {
@@ -167,37 +175,34 @@ export async function action({ request }) {
       );
 
       const responseJson = await response.json();
-      
+
       if (responseJson.data?.sellingPlanGroupCreate?.userErrors?.length > 0) {
-        console.error("API Error:", responseJson.data.sellingPlanGroupCreate.userErrors);
         return Response.json({ error: responseJson.data.sellingPlanGroupCreate.userErrors }, { status: 400 });
       }
 
       const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
+      console.log(`✅ Group Created: ${newGroup.id}. Now attaching ${targetIds.length} products...`);
 
-      // --- ATTACH PRODUCTS ---
-      if (targetIds.length > 0) {
-           console.log(`Attaching ${targetIds.length} products...`);
-           
-           // 1. Attach Products
-           const attachResponse = await admin.graphql(
-             `#graphql
-             mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
-               sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
-                 sellingPlanGroup { id }
-                 userErrors { field message }
-               }
-             }`,
-             { variables: { id: newGroup.id, productIds: targetIds } }
-           );
-           
-           const attachJson = await attachResponse.json();
-           if(attachJson.data?.sellingPlanGroupAddProducts?.userErrors?.length > 0) {
-               console.error("Attach Error:", attachJson.data.sellingPlanGroupAddProducts.userErrors);
-           }
+      // C. Explicitly Attach Products (Batching for safety)
+      const batchSize = 50; // Safe batch size
+      
+      for (let i = 0; i < targetIds.length; i += batchSize) {
+        const batch = targetIds.slice(i, i + batchSize);
+        console.log(`Attaching batch ${i} - ${i + batch.length}`);
+        
+        await admin.graphql(
+          `#graphql
+          mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
+            sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
+              sellingPlanGroup { id }
+              userErrors { field message }
+            }
+          }`,
+          { variables: { id: newGroup.id, productIds: batch } }
+        );
       }
 
-      // Save to DB
+      // D. Save to DB
       const shopifyPlanIdsMap = {};
       newGroup.sellingPlans.edges.forEach(({ node }) => {
          const interval = node.billingPolicy.interval;
@@ -213,7 +218,8 @@ export async function action({ request }) {
         data: {
           shop: session.shop,
           type, 
-          targetId: targetIds[0], 
+          // Always save the first ID or Collection ID as the main reference
+          targetId: type === 'collection' ? (formData.get("collectionId") || targetIds[0]) : targetIds[0],
           targetTitle, 
           originalPrice: originalPrice || "0",
           plansData: JSON.stringify(plans),
@@ -223,13 +229,14 @@ export async function action({ request }) {
         }
       });
 
-      return Response.json({ success: true });
+      return Response.json({ success: true, productsAttached: targetIds.length });
 
     } catch (error) {
       console.error("SERVER ERROR:", error);
       return Response.json({ error: "System Error: " + error.message }, { status: 500 });
     }
   }
+  
   return Response.json({ success: true });
 }
 
@@ -244,6 +251,7 @@ export default function Subscriptions() {
   const [plans, setPlans] = useState([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
   
   // UI State
+  const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [selectedTitle, setSelectedTitle] = useState("");
   const [selectedPrice, setSelectedPrice] = useState("");
   const [targetIds, setTargetIds] = useState([]);
@@ -278,12 +286,18 @@ export default function Subscriptions() {
     if (collection) {
         setSelectedTitle(collection.title);
         setSelectedPrice("N/A");
-        collectionFetcher.load(`/app/subscriptions?collection_id=${collection.id}`);
+        setSelectedCollectionId(collection.id);
+        
+        // Trigger explicit fetch
+        const formData = new FormData();
+        formData.append("action", "fetchCollectionProducts");
+        formData.append("collectionId", collection.id);
+        collectionFetcher.submit(formData, { method: "post" });
     }
   }, [collections, collectionFetcher]);
 
   useEffect(() => {
-      if (collectionFetcher.data && collectionFetcher.data.collectionProducts) {
+      if (collectionFetcher.data?.collectionProducts) {
           const prods = collectionFetcher.data.collectionProducts;
           setPreviewProducts(prods);
           setTargetIds(prods.map(p => p.id));
@@ -298,30 +312,29 @@ export default function Subscriptions() {
     data.append("type", subscriptionType);
     data.append("targetTitle", selectedTitle);
     data.append("originalPrice", selectedPrice);
+    // Explicitly send the list of IDs we gathered
     data.append("targetIds", JSON.stringify(targetIds)); 
     data.append("plans", JSON.stringify(plans));
+    if (subscriptionType === 'collection') data.append("collectionId", selectedCollectionId);
     
     fetcher.submit(data, { method: "post" });
-  }, [targetIds, subscriptionType, selectedTitle, selectedPrice, plans, fetcher, shopify]);
+  }, [targetIds, subscriptionType, selectedTitle, selectedPrice, plans, fetcher, shopify, selectedCollectionId]);
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success) {
-      shopify.toast.show("Subscription applied!");
+      shopify.toast.show(`Success! Applied to ${fetcher.data.productsAttached} products.`);
       handleCancel();
     }
     if (fetcher.state === "idle" && fetcher.data?.error) {
-        // If error is an array of objects
-        if(Array.isArray(fetcher.data.error)) {
-             shopify.toast.show(fetcher.data.error[0].message, { isError: true });
-        } else {
-             shopify.toast.show("Failed to create subscription", { isError: true });
-        }
+         // Handle error object or string
+         const msg = typeof fetcher.data.error === 'string' ? fetcher.data.error : "Failed to create";
+         shopify.toast.show(msg, { isError: true });
     }
   }, [fetcher.state, fetcher.data, handleCancel, shopify]);
 
   const productOptions = [{ label: 'Select product', value: '' }, ...products.map(p => ({ label: `${p.title}`, value: p.id }))];
   const collectionOptions = [{ label: 'Select collection', value: '' }, ...collections.map(c => ({ label: c.title, value: c.id }))];
-  const intervalOptions = [{ label: "Day(s)", value: "DAY" }, { label: "Week(s)", value: "WEEK" }, { label: "Month(s)", value: "MONTH" }, { label: "Year(s)", value: "ANNUAL" }];
+  const intervalOptions = [{ label: "Day(s)", value: "DAY" }, { label: "Week(s)", value: "WEEK" }, { label: "Month(s)", value: "MONTH" }, { label: "Year(s)", value: "YEAR" }];
 
   return (
     <AppProvider i18n={enTranslations}>
