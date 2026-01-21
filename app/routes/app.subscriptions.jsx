@@ -44,38 +44,28 @@ export async function loader({ request }) {
 }
 
 // --- ACTION ---
+// --- ACTION ---
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const actionType = formData.get("action");
   
-  // 1. FETCH COLLECTION PRODUCTS (WITH PAGINATION SUPPORT)
+  // 1. FETCH COLLECTION PRODUCTS (Pagination Support)
   if (actionType === "fetchCollectionProducts") {
     const collectionId = formData.get("collectionId");
-    
     try {
       let allProducts = [];
       let hasNextPage = true;
       let cursor = null;
       
-      // Fetch ALL products from collection (paginated)
       while (hasNextPage) {
         const response = await admin.graphql(
           `#graphql
           query getCollectionProducts($id: ID!, $cursor: String) {
             collection(id: $id) {
               products(first: 250, after: $cursor) {
-                pageInfo {
-                  hasNextPage
-                  endCursor
-                }
-                edges {
-                  node {
-                    id
-                    title
-                    images(first: 1) { nodes { originalSrc } }
-                  }
-                }
+                pageInfo { hasNextPage endCursor }
+                edges { node { id title images(first: 1) { nodes { originalSrc } } } }
               }
             }
           }`,
@@ -87,11 +77,8 @@ export async function action({ request }) {
         
         if (productsData) {
           const products = productsData.edges.map(e => ({
-            id: e.node.id,
-            title: e.node.title,
-            image: e.node.images.nodes[0]?.originalSrc
+            id: e.node.id, title: e.node.title, image: e.node.images.nodes[0]?.originalSrc
           }));
-          
           allProducts = [...allProducts, ...products];
           hasNextPage = productsData.pageInfo.hasNextPage;
           cursor = productsData.pageInfo.endCursor;
@@ -99,16 +86,10 @@ export async function action({ request }) {
           hasNextPage = false;
         }
       }
-      
-      console.log(`✅ Fetched ${allProducts.length} products from collection`);
-      
-      return Response.json({ 
-        collectionProducts: allProducts,
-        totalCount: allProducts.length 
-      });
+      return Response.json({ collectionProducts: allProducts, totalCount: allProducts.length });
     } catch (error) {
-      console.error("❌ Failed to fetch collection products:", error);
-      return Response.json({ error: "Failed to fetch collection products" }, { status: 500 });
+      console.error("❌ Collection Fetch Error:", error);
+      return Response.json({ error: "Failed to fetch collection" }, { status: 500 });
     }
   }
   
@@ -117,13 +98,15 @@ export async function action({ request }) {
     const id = formData.get("id");
     const shopifyGroupId = formData.get("shopifyGroupId");
     if (shopifyGroupId) {
-      await admin.graphql(
-        `#graphql
-        mutation sellingPlanGroupDelete($id: ID!) {
-          sellingPlanGroupDelete(id: $id) { deletedSellingPlanGroupId }
-        }`,
-        { variables: { id: shopifyGroupId } }
-      );
+      try {
+        await admin.graphql(
+          `#graphql
+          mutation sellingPlanGroupDelete($id: ID!) {
+            sellingPlanGroupDelete(id: $id) { deletedSellingPlanGroupId }
+          }`,
+          { variables: { id: shopifyGroupId } }
+        );
+      } catch(e) { console.error("Delete Error", e); }
     }
     await db.subscription.delete({ where: { id } });
     return Response.json({ success: true });
@@ -137,13 +120,7 @@ export async function action({ request }) {
     const plans = JSON.parse(formData.get("plans") || "[]");
     const targetIds = JSON.parse(formData.get("targetIds") || "[]");
 
-    console.log(`🔵 Starting subscription creation for ${targetIds.length} products`);
-    console.log(`🔵 Product IDs:`, targetIds);
-
-    // Validate
-    if (targetIds.length === 0) {
-      return Response.json({ error: "No products selected" }, { status: 400 });
-    }
+    if (targetIds.length === 0) return Response.json({ error: "No products selected" }, { status: 400 });
 
     // Construct Plans
     const sellingPlansToCreate = plans.map((plan, index) => {
@@ -165,145 +142,88 @@ export async function action({ request }) {
         category: "SUBSCRIPTION", 
         billingPolicy,
         deliveryPolicy: { recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) } },
-        pricingPolicies: [{
-          fixed: { adjustmentType: "PERCENTAGE", adjustmentValue: { percentage: parseFloat(plan.discount) } }
-        }]
+        pricingPolicies: [{ fixed: { adjustmentType: "PERCENTAGE", adjustmentValue: { percentage: parseFloat(plan.discount) } } }]
       };
     });
 
-    // Create Selling Plan Group
-    console.log(`🔵 Creating selling plan group...`);
-    const response = await admin.graphql(
-      `#graphql
-      mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!, $resources: SellingPlanGroupResourceInput) {
-        sellingPlanGroupCreate(input: $input, resources: $resources) {
-          sellingPlanGroup { 
-            id 
-            name
-            productCount
-            sellingPlans(first: 10) { 
-              edges { 
-                node { 
-                  id 
-                  name
-                  billingPolicy { 
-                    ... on SellingPlanRecurringBillingPolicy { 
-                      interval 
-                      intervalCount 
-                    } 
-                  } 
-                } 
+    try {
+      // Create Selling Plan Group
+      const response = await admin.graphql(
+        `#graphql
+        mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!, $resources: SellingPlanGroupResourceInput) {
+          sellingPlanGroupCreate(input: $input, resources: $resources) {
+            sellingPlanGroup { 
+              id 
+              productCount 
+              sellingPlans(first: 10) { 
+                edges { node { id billingPolicy { ... on SellingPlanRecurringBillingPolicy { interval intervalCount } } } } 
               } 
-            } 
+            }
+            userErrors { field message }
           }
-          userErrors { field message }
-        }
-      }`,
-      {
-        variables: {
-          input: {
-            name: `Subscription: ${targetTitle}`,
-            merchantCode: `sub-${Date.now()}`,
-            options: ["Delivery Interval"],
-            sellingPlansToCreate
-          },
-          resources: {
-            productIds: targetIds  // ⭐ CRITICAL: Attach products during creation
+        }`,
+        {
+          variables: {
+            input: {
+              name: `Subscription: ${targetTitle}`,
+              merchantCode: `sub-${Date.now()}`,
+              options: ["Delivery Interval"],
+              position: 1,
+              sellingPlansToCreate
+            },
+            resources: { productIds: targetIds }
           }
         }
-      }
-    );
+      );
 
-    const responseJson = await response.json();
-    console.log(`🔵 Selling plan group response:`, JSON.stringify(responseJson, null, 2));
-    
-    if (responseJson.data?.sellingPlanGroupCreate?.userErrors?.length > 0) {
-      console.error("❌ User errors:", responseJson.data.sellingPlanGroupCreate.userErrors);
-      return Response.json({ 
-        error: responseJson.data.sellingPlanGroupCreate.userErrors 
-      }, { status: 400 });
+      const responseJson = await response.json();
+
+      // --- CRASH PREVENTION CHECK ---
+      if (!responseJson.data || !responseJson.data.sellingPlanGroupCreate) {
+        console.error("❌ FATAL API ERROR:", JSON.stringify(responseJson));
+        return Response.json({ error: "Shopify API Error. Check terminal logs." }, { status: 500 });
+      }
+
+      if (responseJson.data.sellingPlanGroupCreate.userErrors.length > 0) {
+        console.error("❌ USER ERRORS:", responseJson.data.sellingPlanGroupCreate.userErrors);
+        return Response.json({ error: responseJson.data.sellingPlanGroupCreate.userErrors }, { status: 400 });
+      }
+
+      const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
+
+      // Save to DB
+      const shopifyPlanIdsMap = {};
+      newGroup.sellingPlans.edges.forEach(({ node }) => {
+         const interval = node.billingPolicy.interval;
+         const count = node.billingPolicy.intervalCount;
+         plans.forEach((p, index) => {
+            if (p.interval === interval && parseInt(p.intervalCount) === count) {
+               shopifyPlanIdsMap[index + 1] = node.id;
+            }
+         });
+      });
+
+      await db.subscription.create({
+        data: {
+          shop: session.shop,
+          type, 
+          // Safe check for targetId to ensure it's not null
+          targetId: type === 'collection' ? (formData.get("collectionId") || targetIds[0]) : targetIds[0],
+          targetTitle, 
+          originalPrice: originalPrice || "0",
+          plansData: JSON.stringify(plans),
+          shopifyGroupId: newGroup.id,
+          shopifyPlanIds: JSON.stringify(shopifyPlanIdsMap),
+          enabled: true
+        }
+      });
+
+      return Response.json({ success: true, productsAttached: newGroup.productCount });
+
+    } catch (error) {
+      console.error("❌ SERVER CRASH ERROR:", error);
+      return Response.json({ error: "Server Error: " + error.message }, { status: 500 });
     }
-
-    const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
-    console.log(`✅ Created selling plan group: ${newGroup.id}`);
-    console.log(`✅ Product count in group: ${newGroup.productCount}`);
-
-    // BACKUP METHOD: If productCount is 0 or less than expected, add products explicitly
-    if (!newGroup.productCount || newGroup.productCount < targetIds.length) {
-      console.log(`⚠️ Product count mismatch. Attempting to add products explicitly...`);
-      
-      // Add products in batches
-      const batchSize = 100;
-      let successCount = 0;
-      
-      for (let i = 0; i < targetIds.length; i += batchSize) {
-        const batch = targetIds.slice(i, i + batchSize);
-        console.log(`🔵 Adding batch ${Math.floor(i/batchSize) + 1}: ${batch.length} products`);
-        
-        try {
-          const attachResponse = await admin.graphql(
-            `#graphql
-            mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
-              sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
-                sellingPlanGroup { 
-                  id 
-                  productCount
-                }
-                userErrors { field message }
-              }
-            }`,
-            { variables: { id: newGroup.id, productIds: batch } }
-          );
-          
-          const attachJson = await attachResponse.json();
-          console.log(`🔵 Batch response:`, JSON.stringify(attachJson, null, 2));
-          
-          if (attachJson.data?.sellingPlanGroupAddProducts?.userErrors?.length > 0) {
-            console.error(`❌ Errors in batch:`, attachJson.data.sellingPlanGroupAddProducts.userErrors);
-          } else {
-            successCount += batch.length;
-            console.log(`✅ Successfully added batch. Total products in group: ${attachJson.data.sellingPlanGroupAddProducts.sellingPlanGroup.productCount}`);
-          }
-        } catch (error) {
-          console.error(`❌ Error adding batch:`, error);
-        }
-      }
-      
-      console.log(`✅ Finished adding products. Success count: ${successCount}`);
-    }
-
-    // Save to DB
-    const shopifyPlanIdsMap = {};
-    newGroup.sellingPlans.edges.forEach(({ node }) => {
-       const interval = node.billingPolicy.interval;
-       const count = node.billingPolicy.intervalCount;
-       plans.forEach((p, index) => {
-          if (p.interval === interval && parseInt(p.intervalCount) === count) {
-             shopifyPlanIdsMap[index + 1] = node.id;
-          }
-       });
-    });
-
-    await db.subscription.create({
-      data: {
-        shop: session.shop,
-        type, 
-        targetId: type === 'collection' ? formData.get("collectionId") : targetIds[0],
-        targetTitle, 
-        originalPrice: originalPrice || "0",
-        plansData: JSON.stringify(plans),
-        shopifyGroupId: newGroup.id,
-        shopifyPlanIds: JSON.stringify(shopifyPlanIdsMap),
-        enabled: true
-      }
-    });
-    
-    console.log(`✅ Subscription saved to database`);
-    
-    return Response.json({ 
-      success: true, 
-      productsAttached: newGroup.productCount || targetIds.length 
-    });
   }
   
   return Response.json({ success: true });
