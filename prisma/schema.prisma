@@ -55,8 +55,9 @@ model Bundle {
   price        String?  // Optional fixed price for the whole bundle
   discount     String?  // Optional percentage off
   
-  discountCode String?  // <--- ADDED: Stores the auto-generated code (e.g., "BUNDLE-123")
+  discountCode String?  // Stores the human-readable code (e.g. "BUNDLE-123")
+  discountId   String?  // <--- NEW: Stores the Shopify GID (gid://shopify/DiscountAutomaticNode/123)
   
-  productIds   String   // We will store the list of Product IDs here as a JSON string
+  productIds   String   // JSON string of products
   createdAt    DateTime @default(now())
 }
