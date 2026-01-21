@@ -16,10 +16,12 @@ import db from "../db.server";
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
 
+  // Fetch first 50 items for the selector dropdown
+  // (We fetch ALL items later in the Action when saving)
   const response = await admin.graphql(
     `#graphql
       query {
-        products(first: 20) {
+        products(first: 50) {
           edges {
             node {
               id
@@ -28,7 +30,7 @@ export async function loader({ request }) {
             }
           }
         }
-        collections(first: 20) {
+        collections(first: 50) {
           edges {
             node {
               id
@@ -91,11 +93,12 @@ export async function action({ request }) {
   // 2. CREATE
   if (actionType === "create") {
     const type = formData.get("type");
-    const targetId = formData.get("targetId");
+    const targetId = formData.get("targetId"); // Product ID or Collection ID
     const targetTitle = formData.get("targetTitle");
     const originalPrice = formData.get("originalPrice");
     const plans = JSON.parse(formData.get("plans") || "[]");
 
+    // Construct Shopify Plans
     const sellingPlansToCreate = plans.map((plan, index) => {
       const billingPolicy = {
         recurring: { 
@@ -171,7 +174,9 @@ export async function action({ request }) {
 
     const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
 
-    // --- ATTACH LOGIC ---
+    // --- ATTACH LOGIC (CRITICAL UPDATES HERE) ---
+    
+    // CASE A: Single Product
     if (type === "product") {
       await admin.graphql(
         `#graphql
@@ -180,13 +185,17 @@ export async function action({ request }) {
         }`,
         { variables: { id: targetId, sellingPlanGroupIds: [newGroup.id] } }
       );
-    } else if (type === "collection") {
+    } 
+    
+    // CASE B: Collection (Batching Logic)
+    else if (type === "collection") {
+      console.log(`Starting collection attachment for: ${targetId}`);
       
-      // FIX: Loop to get ALL products in collection (Pagination)
       let allProductIds = [];
       let hasNextPage = true;
       let endCursor = null;
 
+      // 1. Fetch ALL Product IDs using Pagination
       while (hasNextPage) {
         const query = `#graphql
           query getCollectionProducts($id: ID!, $cursor: String) {
@@ -202,25 +211,40 @@ export async function action({ request }) {
         const cData = await cResponse.json();
         
         const edges = cData.data.collection?.products?.edges || [];
-        allProductIds.push(...edges.map(e => e.node.id));
+        const ids = edges.map(e => e.node.id);
+        allProductIds.push(...ids);
 
         hasNextPage = cData.data.collection?.products?.pageInfo?.hasNextPage;
         endCursor = cData.data.collection?.products?.pageInfo?.endCursor;
+        
+        console.log(`Fetched ${ids.length} products. Total gathered: ${allProductIds.length}`);
       }
 
-      // Attach in batches if needed (Shopify limits array size, usually 250 is safe)
-      if(allProductIds.length > 0) {
-        await admin.graphql(
+      // 2. Attach in BATCHES of 250 (To avoid API Limits)
+      const BATCH_SIZE = 250;
+      for (let i = 0; i < allProductIds.length; i += BATCH_SIZE) {
+        const batch = allProductIds.slice(i, i + BATCH_SIZE);
+        console.log(`Attaching batch ${i/BATCH_SIZE + 1} with ${batch.length} products...`);
+        
+        const attachResponse = await admin.graphql(
           `#graphql
           mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
-            sellingPlanGroupAddProducts(id: $id, productIds: $productIds) { sellingPlanGroup { id } }
+            sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
+               sellingPlanGroup { id }
+               userErrors { field message }
+            }
           }`,
-          { variables: { id: newGroup.id, productIds: allProductIds } }
+          { variables: { id: newGroup.id, productIds: batch } }
         );
+        
+        const attachJson = await attachResponse.json();
+        if(attachJson.data?.sellingPlanGroupAddProducts?.userErrors?.length > 0) {
+             console.error("Batch Error:", attachJson.data.sellingPlanGroupAddProducts.userErrors);
+        }
       }
     }
 
-    // Map IDs
+    // Map IDs for DB
     const shopifyPlanIdsMap = {};
     newGroup.sellingPlans.edges.forEach(({ node }) => {
        const interval = node.billingPolicy.interval;
@@ -294,6 +318,7 @@ export default function Subscriptions() {
 
   const handleSave = useCallback(() => {
     if (!formData.targetId) return shopify.toast.show("Please select a target", { isError: true });
+    
     const data = new FormData();
     data.append("action", "create");
     data.append("type", subscriptionType);
@@ -301,6 +326,7 @@ export default function Subscriptions() {
     data.append("targetTitle", formData.targetTitle);
     data.append("originalPrice", formData.originalPrice);
     data.append("plans", JSON.stringify(plans));
+    
     fetcher.submit(data, { method: "post" });
   }, [formData, subscriptionType, plans, fetcher, shopify]);
 

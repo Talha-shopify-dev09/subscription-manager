@@ -12,7 +12,7 @@
     {
       "type": "color",
       "id": "accent_color",
-      "label": "Highlight Color",
+      "label": "Button Color",
       "default": "#000000"
     }
   ]
@@ -33,6 +33,7 @@
     border-radius: 8px;
     overflow: hidden;
     background: #fff;
+    max-width: 400px; /* Optional constraint */
   }
   
   .sw-header {
@@ -53,19 +54,11 @@
     border-bottom: 1px solid #f3f4f6;
     transition: background 0.2s;
   }
-  .sw-option-row:last-child { border-bottom: none; }
   .sw-option-row:hover { background-color: #f9fafb; }
   
-  .sw-radio-container {
-    margin-right: 12px;
-    margin-top: 2px;
-  }
+  .sw-radio-container { margin-right: 12px; margin-top: 2px; }
   
-  .sw-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
+  .sw-info { flex: 1; display: flex; flex-direction: column; }
   
   .sw-top-line {
     display: flex;
@@ -80,7 +73,7 @@
   /* Dropdown Area */
   .sw-plan-selector {
     margin-top: 10px;
-    display: none; /* Hidden by default */
+    display: none;
     padding-top: 10px;
     border-top: 1px solid #f3f4f6;
   }
@@ -104,21 +97,47 @@
     font-weight: 600;
     margin-left: 8px;
   }
+
+  /* ADD TO CART BUTTON STYLE */
+  .sw-footer {
+    padding: 15px;
+    background: #fff;
+    border-top: 1px solid #e5e7eb;
+  }
+  
+  .sw-btn {
+    width: 100%;
+    background-color: {{ section.settings.accent_color }};
+    color: #fff;
+    padding: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .sw-btn:hover { opacity: 0.9; }
+
+  .sw-error {
+    color: #ef4444;
+    font-size: 13px;
+    margin-top: 10px;
+    text-align: center;
+    display: none;
+  }
 </style>
 
 <script>
 (async function() {
   const container = document.getElementById('subscription-widget-{{ product.id }}');
   const productId = '{{ product.id }}';
-  const productPrice = {{ product.price }}; // Cents
+  const variantId = {{ product.selected_or_first_available_variant.id }}; // Default variant
+  const productPrice = {{ product.price }}; 
   const currencySymbol = '{{ cart.currency.symbol }}';
 
-  // Helper to format money
-  function formatMoney(cents) {
-    return currencySymbol + (cents / 100).toFixed(2);
-  }
+  function formatMoney(cents) { return currencySymbol + (cents / 100).toFixed(2); }
 
-  // 1. Fetch Subscription Data
   try {
     const response = await fetch(`/apps/subscription-manager/api/subscription/${productId}`);
     if (!response.ok) { container.style.display = 'none'; return; }
@@ -130,8 +149,6 @@
     }
 
     const sub = data.subscription;
-    
-    // Parse Plans & IDs
     let plans = [], shopifyIds = {};
     try {
       plans = JSON.parse(sub.plansData || '[]');
@@ -140,8 +157,7 @@
 
     if (plans.length === 0) { container.style.display = 'none'; return; }
 
-    // 2. Build HTML
-    // We inject a hidden input named 'selling_plan' that product forms automatically pick up
+    // --- RENDER HTML ---
     let html = `
       <div class="sw-header">{{ section.settings.heading }}</div>
       
@@ -170,19 +186,15 @@
           </div>
           
           <div class="sw-plan-selector" id="plan-selector-box">
-             <select class="sw-select" id="selling-plan-dropdown" onchange="updateHiddenInput()">
+             <select class="sw-select" id="selling-plan-dropdown" onchange="updateUI()">
     `;
 
-    // Loop Plans for Dropdown
     plans.forEach((plan, index) => {
         const key = (index + 1).toString();
-        // Extract numeric ID from gid://shopify/SellingPlan/12345
         const rawId = shopifyIds[key];
         const cleanId = rawId ? rawId.split('/').pop() : '';
-        
         const discount = parseFloat(plan.discount || 0);
         const price = (productPrice * (1 - discount/100));
-        
         const label = `Every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s)`;
 
         html += `<option value="${cleanId}" data-discount="${discount}" data-price="${price}">${label} - Save ${discount}%</option>`;
@@ -194,52 +206,105 @@
         </div>
       </label>
 
-      <input type="hidden" name="selling_plan" id="final-selling-plan-input" value="">
+      <div class="sw-footer">
+         <button id="btn-add-to-cart" class="sw-btn" onclick="addToCart()">Add to Cart</button>
+         <p id="sw-error-msg" class="sw-error"></p>
+      </div>
     `;
 
     container.innerHTML = html;
 
-    // 3. Initialize Logic
+    // --- LOGIC ---
+    // State Variables
+    let currentMode = 'onetime'; 
+    let currentPlanId = '';
+
     window.selectOption = function(type) {
         const dropdown = document.getElementById('plan-selector-box');
-        const hiddenInput = document.getElementById('final-selling-plan-input');
-        const dropdownSelect = document.getElementById('selling-plan-dropdown');
         const radioOne = container.querySelector('input[value="onetime"]');
         const radioSub = container.querySelector('input[value="subscription"]');
 
+        currentMode = type;
+
         if (type === 'onetime') {
             dropdown.style.display = 'none';
-            hiddenInput.value = ''; // Clear plan ID
-            hiddenInput.disabled = true; // Ensure form doesn't send it
             radioOne.checked = true;
+            currentPlanId = '';
         } else {
             dropdown.style.display = 'block';
-            hiddenInput.disabled = false;
-            hiddenInput.value = dropdownSelect.value; // Set first plan
             radioSub.checked = true;
-            
-            // Update prices/badges initially
-            updateHiddenInput();
+            updateUI(); // Set initial plan ID
         }
     };
 
-    window.updateHiddenInput = function() {
+    window.updateUI = function() {
         const dropdownSelect = document.getElementById('selling-plan-dropdown');
-        const hiddenInput = document.getElementById('final-selling-plan-input');
         
-        // Update ID
-        hiddenInput.value = dropdownSelect.value;
+        // Update State
+        currentPlanId = dropdownSelect.value;
         
-        // Update Price Display visually
+        // Visuals
         const selectedOption = dropdownSelect.options[dropdownSelect.selectedIndex];
         const price = parseFloat(selectedOption.getAttribute('data-price'));
         const discount = selectedOption.getAttribute('data-discount');
-
         document.getElementById('sub-price-display').innerText = formatMoney(price);
         document.getElementById('max-save-display').innerText = discount;
     };
 
-    // Auto-select initial state
+    // --- ADD TO CART FUNCTION ---
+    window.addToCart = async function() {
+        const btn = document.getElementById('btn-add-to-cart');
+        const errorMsg = document.getElementById('sw-error-msg');
+        errorMsg.style.display = 'none';
+
+        const originalText = btn.innerText;
+        btn.innerText = "Adding...";
+        btn.style.opacity = "0.7";
+
+        // Build Payload
+        const payload = {
+            id: variantId,
+            quantity: 1
+        };
+
+        // If subscription is selected, add the plan ID
+        if (currentMode === 'subscription' && currentPlanId) {
+            payload.selling_plan = currentPlanId;
+        } else if (currentMode === 'subscription' && !currentPlanId) {
+             errorMsg.innerText = "Error: Invalid Plan ID. Please check app settings.";
+             errorMsg.style.display = 'block';
+             btn.innerText = originalText;
+             btn.style.opacity = "1";
+             return;
+        }
+
+        try {
+            const response = await fetch('/cart/add.js', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ items: [payload] })
+            });
+
+            const cartData = await response.json();
+
+            if (response.ok) {
+                 window.location.href = '/cart';
+            } else {
+                 errorMsg.innerText = `Error: ${cartData.description || "Issue adding to cart"}`;
+                 errorMsg.style.display = 'block';
+                 btn.innerText = originalText;
+                 btn.style.opacity = "1";
+            }
+        } catch (err) {
+            console.error(err);
+            errorMsg.innerText = "Network Error";
+            errorMsg.style.display = 'block';
+            btn.innerText = originalText;
+            btn.style.opacity = "1";
+        }
+    };
+
+    // Initialize Badge
     const maxDiscount = Math.max(...plans.map(p => parseFloat(p.discount || 0)));
     document.getElementById('max-save-display').innerText = maxDiscount;
 
