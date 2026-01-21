@@ -9,13 +9,27 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import db from "../db.server";
 
+// 1. LOADER (FIXED)
 export async function loader({ request }) {
   const { session, admin } = await authenticate.admin(request);
   
-  // 1. Fetch Store Currency
-  const shopResponse = await admin.graphql(`{ shop { currencyFormats { active { symbol } } } }`);
+  // FIX: Use 'moneyFormat' instead of the invalid 'active' field
+  const shopResponse = await admin.graphql(
+    `#graphql
+    query {
+      shop {
+        currencyFormats {
+          moneyFormat
+        }
+      }
+    }`
+  );
+  
   const shopJson = await shopResponse.json();
-  const currencySymbol = shopJson.data?.shop?.currencyFormats?.active?.symbol || "$";
+  const moneyFormat = shopJson.data?.shop?.currencyFormats?.moneyFormat || "$ {{amount}}";
+  
+  // Extract symbol (Remove {{amount}} and whitespace)
+  const currencySymbol = moneyFormat.replace("{{amount}}", "").trim();
 
   const bundles = await db.bundle.findMany({
     where: { shop: session.shop },
@@ -25,6 +39,7 @@ export async function loader({ request }) {
   return { bundles, currencySymbol };
 }
 
+// 2. ACTION
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
@@ -54,7 +69,7 @@ export async function action({ request }) {
 
         const discountValue = totalOriginal - totalBundle;
 
-        // 2. TAGGING: Add "Bundle-Item" tag
+        // A. TAGGING
         for (const pid of productIds) {
             await admin.graphql(
                 `#graphql
@@ -67,7 +82,7 @@ export async function action({ request }) {
             );
         }
 
-        // 3. Create AUTOMATIC Discount
+        // B. AUTOMATIC DISCOUNT
         if (discountValue > 0) {
             await admin.graphql(
                 `#graphql
@@ -94,7 +109,7 @@ export async function action({ request }) {
             );
         }
 
-        // 4. Save Bundle
+        // C. SAVE BUNDLE
         await db.bundle.create({
             data: {
                 shop: session.shop,
@@ -145,6 +160,7 @@ async function updateShopMetafield(admin, bundles) {
   );
 }
 
+// 3. UI COMPONENT
 export default function BundlePage() {
   const { bundles, currencySymbol } = useLoaderData();
   const actionData = useActionData();
