@@ -19,7 +19,7 @@ export async function loader({ request }) {
   return { bundles };
 }
 
-// 2. ACTION: Corrected Mutation
+// 2. ACTION: Corrected GraphQL Syntax
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
@@ -47,66 +47,57 @@ export async function action({ request }) {
 
             console.log(`Creating variant for ${p.title} at ${bundlePrice}`);
 
-            // --- FIX: Use 'productVariantsBulkCreate' ---
-            const variantResponse = await admin.graphql(
-                `#graphql
-                mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-                    productVariantsBulkCreate(productId: $productId, variants: $variants) {
-                        productVariants { id title price }
-                        userErrors { field message }
-                    }
-                }`,
-                {
-                    variables: {
-                        productId: p.productId, // The Parent Product ID
-                        variants: [{
-                            price: bundlePrice,
-                            optionValues: [{name: "Title", value: "Bundle Deal"}], // or mapped to existing options
-                            // For simple products without options, we might need a different strategy,
-                            // but usually, adding an option requires 'productUpdate'. 
-                            // To keep it simple: We assume the product has options or we use standard variant creation.
-                            // If product has NO options (Default Title), adding a variant is tricky.
-                            // Let's try the simplest "price override" approach first.
-                            
-                            // BETTER APPROACH FOR SIMPLICITY:
-                            // We just set the price. If it fails, we fall back.
-                            price: bundlePrice
-                        }]
-                    }
-                }
-            );
-            
-            // NOTE: Creating variants on products that only have "Default Title" is complex.
-            // If this fails, it usually means the product needs Options (Size/Color) first.
-            // For this tutorial, we will try to just add it. 
-            // If it fails, we will use the ORIGINAL ID so the flow doesn't break.
+            let newVariantId = null;
 
-            const variantJson = await variantResponse.json();
-            
-            // Check if data exists
-            if (!variantJson.data || !variantJson.data.productVariantsBulkCreate) {
-                 console.error("API Error:", variantJson);
-                 finalProductList.push({ handle: p.handle, id: p.originalVariantId, price: p.originalPrice });
-                 continue;
+            try {
+                // --- FIX: Use correct field names (optionName, name) ---
+                const variantResponse = await admin.graphql(
+                    `#graphql
+                    mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+                        productVariantsBulkCreate(productId: $productId, variants: $variants) {
+                            productVariants { id title price }
+                            userErrors { field message }
+                        }
+                    }`,
+                    {
+                        variables: {
+                            productId: p.productId, 
+                            variants: [{
+                                price: bundlePrice,
+                                // FIX IS HERE:
+                                optionValues: [{ optionName: "Title", name: "Bundle Deal" }]
+                            }]
+                        }
+                    }
+                );
+
+                const variantJson = await variantResponse.json();
+
+                // Check for User Errors (e.g. Product has different options than 'Title')
+                if (variantJson.data?.productVariantsBulkCreate?.userErrors?.length > 0) {
+                     console.warn("Variant Creation UserError:", variantJson.data.productVariantsBulkCreate.userErrors);
+                     // If we fail (e.g. product has Size/Color options), we cannot just add "Title".
+                     // Fallback to Original ID.
+                } else if (variantJson.data?.productVariantsBulkCreate?.productVariants?.length > 0) {
+                     newVariantId = variantJson.data.productVariantsBulkCreate.productVariants[0].id;
+                }
+            } catch (innerError) {
+                console.error("Individual Variant Creation Failed:", innerError);
             }
 
-            const newVariants = variantJson.data.productVariantsBulkCreate.productVariants;
-            const errors = variantJson.data.productVariantsBulkCreate.userErrors;
-
-            if (errors.length > 0 || !newVariants || newVariants.length === 0) {
-                 console.warn("Could not create special variant (Product might be simple/no-options). Using original.");
-                 // Fallback to original
+            // DECISION: Use New Variant OR Fallback to Original
+            if (newVariantId) {
+                 finalProductList.push({
+                     handle: p.handle,
+                     id: newVariantId, 
+                     price: bundlePrice
+                 });
+            } else {
+                 console.log("Using original variant as fallback for:", p.title);
                  finalProductList.push({
                      handle: p.handle,
                      id: p.originalVariantId, 
                      price: p.originalPrice
-                 });
-            } else {
-                 // SUCCESS
-                 finalProductList.push({
-                     handle: p.handle,
-                     id: newVariants[0].id, 
-                     price: newVariants[0].price
                  });
             }
         }
@@ -128,7 +119,7 @@ export async function action({ request }) {
     }
   } catch (error) {
       console.error("SERVER ERROR:", error);
-      return { error: error.message };
+      return { error: "System Error: " + error.message };
   }
   return null;
 }
