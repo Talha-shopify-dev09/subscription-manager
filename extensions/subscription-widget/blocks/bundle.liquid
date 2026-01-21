@@ -11,7 +11,7 @@
         1. Use the image uploaded in Section Settings if available.
         2. Fallback to the first product's featured image.
       {% endcomment %}
-      {% assign custom_image = section.settings.custom_bundle_image %}
+      {% assign custom_image = block.settings.custom_bundle_image %}
       {% assign fallback_image = nil %}
       
       <section class="bundle-wrapper" aria-labelledby="bundle-title-{{ section.id }}-{{ bundle.id }}">
