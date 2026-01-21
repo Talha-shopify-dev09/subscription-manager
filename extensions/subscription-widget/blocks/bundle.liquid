@@ -5,223 +5,254 @@
 {% if bundles != blank %}
   <div class="{{ section_scope }} bundle-container" data-bundle-section>
     {% for bundle in bundles %}
+      
+      {% comment %} 
+        Determine the image: 
+        1. Use the image uploaded in Section Settings if available.
+        2. Fallback to the first product's featured image.
+      {% endcomment %}
+      {% assign custom_image = section.settings.custom_bundle_image %}
+      {% assign fallback_image = nil %}
+      
       <section class="bundle-wrapper" aria-labelledby="bundle-title-{{ section.id }}-{{ bundle.id }}">
-        <header class="bundle-header">
-          <h2 id="bundle-title-{{ section.id }}-{{ bundle.id }}" class="bundle-title">
-            {{ bundle.title }}
-          </h2>
-        </header>
+        
+        <div class="bundle-content-column">
+          <header class="bundle-header">
+            <h2 id="bundle-title-{{ section.id }}-{{ bundle.id }}" class="bundle-title">
+              {{ bundle.title }}
+            </h2>
+          </header>
 
-        <div class="bundle-grid" role="list">
-          {% for product_info in bundle.products %}
-            {% assign prod = all_products[product_info.handle] %}
-            {% if prod != empty %}
-              {% assign target_price_cents = product_info.bundlePrice | times: 100 | round %}
+          <div class="bundle-list" role="list">
+            {% for product_info in bundle.products %}
+              {% assign prod = all_products[product_info.handle] %}
+              {% if prod != empty %}
+                {% assign target_price_cents = product_info.bundlePrice | times: 100 | round %}
+                
+                {% if forloop.first %}
+                  {% assign fallback_image = prod.featured_image %}
+                {% endif %}
 
-              <article class="product-card" role="listitem">
-                <div class="image-wrapper">
-                  {% if prod.featured_image %}
-                    <img
-                      src="{{ prod.featured_image | image_url: width: 600 }}"
-                      alt="{{ prod.featured_image.alt | default: prod.title | escape }}"
-                      loading="lazy"
-                      width="600"
-                      height="600"
-                    >
-                  {% else %}
-                    <div class="image-fallback" aria-hidden="true"></div>
-                  {% endif %}
-                </div>
-
-                <div class="product-info">
-                  <h3 class="product-title">{{ prod.title }}</h3>
-
-                  <div class="price-comparison" aria-label="Price comparison">
-                    <span class="original-price">{{ prod.price | money }}</span>
-                    <span class="bundle-price-text">{{ target_price_cents | money }}</span>
+                <div class="bundle-list-item" role="listitem">
+                  <div class="item-details">
+                    <h3 class="product-title">{{ prod.title }}</h3>
+                    <div class="item-meta">
+                       {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle.id | append: '-' | append: prod.id %}
+                       <div class="variant-wrapper">
+                         <select
+                           id="{{ select_id }}"
+                           class="bundle-variant-select"
+                           data-bundle-id="{{ bundle.id }}"
+                           data-product-handle="{{ product_info.handle }}"
+                           data-target-price-cents="{{ target_price_cents }}"
+                         >
+                           {% for variant in prod.variants %}
+                             <option
+                               value="{{ variant.id }}"
+                               data-variant-price-cents="{{ variant.price }}"
+                               {% if variant.available == false %}disabled{% endif %}
+                             >
+                               {{ variant.title }}{% unless variant.available %} (Sold out){% endunless %}
+                             </option>
+                           {% endfor %}
+                         </select>
+                       </div>
+                    </div>
                   </div>
 
-                  <div class="variant-selector-wrapper">
-                    {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle.id | append: '-' | append: prod.id %}
-                    <label for="{{ select_id }}">Select option</label>
-
-                    <select
-                      id="{{ select_id }}"
-                      class="bundle-variant-select"
-                      data-bundle-id="{{ bundle.id }}"
-                      data-product-handle="{{ product_info.handle }}"
-                      data-target-price-cents="{{ target_price_cents }}"
-                    >
-                      {% for variant in prod.variants %}
-                        <option
-                          value="{{ variant.id }}"
-                          data-variant-price-cents="{{ variant.price }}"
-                          {% if variant.available == false %}disabled{% endif %}
-                        >
-                          {{ variant.title }}{% unless variant.available %} (Sold out){% endunless %}
-                        </option>
-                      {% endfor %}
-                    </select>
+                  <div class="item-pricing">
+                    <div class="price-stack">
+                      <span class="original-price">{{ prod.price | money }}</span>
+                      <span class="bundle-price-text">{{ target_price_cents | money }}</span>
+                    </div>
                   </div>
                 </div>
-              </article>
-            {% endif %}
-          {% endfor %}
-        </div>
-
-        <footer class="bundle-footer">
-          <div class="total-price-box" aria-live="polite">
-            <div class="bundle-total-row">
-              <span>Bundle total</span>
-              <span class="final-price" data-bundle-total>{{ currency_symbol }}{{ bundle.price }}</span>
-            </div>
-            <div class="bundle-savings-row" data-bundle-savings-row hidden>
-              <span>You save</span>
-              <span class="bundle-savings" data-bundle-savings></span>
-            </div>
+              {% endif %}
+            {% endfor %}
           </div>
 
-          <button
-            type="button"
-            class="add-bundle-btn"
-            data-add-bundle
-            data-bundle-id="{{ bundle.id }}"
-          >
-            Add bundle to cart
-          </button>
+          <footer class="bundle-footer">
+            <div class="total-row">
+              <span class="total-label">TOTAL</span>
+              <div class="total-values">
+                 <span class="bundle-savings-tag" data-bundle-savings-row hidden>
+                    Save <span data-bundle-savings></span>
+                 </span>
+                <span class="final-price" data-bundle-total>{{ currency_symbol }}{{ bundle.price }}</span>
+              </div>
+            </div>
 
-          <p class="bundle-note" aria-hidden="true">
-            Bundle items are added individually.
-          </p>
-        </footer>
+            <button
+              type="button"
+              class="add-bundle-btn"
+              data-add-bundle
+              data-bundle-id="{{ bundle.id }}"
+            >
+              Buy Now
+            </button>
+          </footer>
+        </div>
+
+        <div class="bundle-image-column">
+          <div class="hero-image-wrapper">
+             {% if custom_image != blank %}
+                <img src="{{ custom_image | image_url: width: 1200 }}" alt="{{ bundle.title | escape }}" loading="lazy">
+             {% elsif fallback_image != blank %}
+                <img src="{{ fallback_image | image_url: width: 1200 }}" alt="{{ bundle.title | escape }}" loading="lazy">
+             {% else %}
+                <div class="image-fallback"></div>
+             {% endif %}
+          </div>
+        </div>
+
       </section>
     {% endfor %}
   </div>
 
   <style>
-    .{{ section_scope }}.bundle-container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }
+    .{{ section_scope }}.bundle-container {
+      max-width: 1200px;
+      margin: 60px auto;
+      padding: 0 20px;
+      color: #333;
+    }
 
     .{{ section_scope }} .bundle-wrapper {
-      border: 1px solid #e9e9e9;
-      border-radius: 14px;
-      padding: 28px;
-      margin-bottom: 34px;
-      background: #fff;
-    }
-
-    .{{ section_scope }} .bundle-title { margin: 0 0 18px; font-size: 1.35rem; letter-spacing: -0.01em; }
-
-    .{{ section_scope }} .bundle-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 18px;
-      margin-bottom: 26px;
-    }
-
-    .{{ section_scope }} .product-card {
-      border: 1px solid #efefef;
-      border-radius: 12px;
-      overflow: hidden;
-      background: #fff;
       display: flex;
-      flex-direction: column;
-    }
-
-    .{{ section_scope }} .image-wrapper {
-      background: #f7f7f7;
-      aspect-ratio: 1 / 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      flex-direction: column-reverse;
+      gap: 20px;
+      margin-bottom: 60px;
+      background: #FDFBF7;
+      border-radius: 4px;
       overflow: hidden;
     }
 
-    .{{ section_scope }} .image-wrapper img {
+    @media (min-width: 992px) {
+      .{{ section_scope }} .bundle-wrapper {
+        flex-direction: row;
+        align-items: stretch;
+      }
+    }
+
+    .{{ section_scope }} .bundle-content-column {
+      flex: 1.2;
+      padding: 40px;
+    }
+    
+    .{{ section_scope }} .bundle-image-column {
+      flex: 1;
+      display: flex;
+      background: #F4F1EA; 
+    }
+
+    .{{ section_scope }} .hero-image-wrapper {
+      width: 100%;
+      display: flex;
+    }
+
+    .{{ section_scope }} .hero-image-wrapper img {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: cover;
       display: block;
     }
 
-    .{{ section_scope }} .image-fallback {
-      width: 60%;
-      height: 60%;
-      border-radius: 12px;
-      background: #ededed;
+    .{{ section_scope }} .bundle-title {
+      font-size: 2rem;
+      font-weight: 500;
+      margin-bottom: 30px;
+      letter-spacing: -0.02em;
     }
 
-    .{{ section_scope }} .product-info { padding: 14px 14px 16px; }
+    .{{ section_scope }} .bundle-list {
+      display: flex;
+      flex-direction: column;
+      border-top: 1px solid #E5E5E5;
+    }
 
-    .{{ section_scope }} .product-title { margin: 0 0 8px; font-size: 1rem; line-height: 1.25; }
+    .{{ section_scope }} .bundle-list-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 20px 0;
+      border-bottom: 1px solid #E5E5E5;
+    }
 
-    .{{ section_scope }} .price-comparison { margin-bottom: 12px; font-size: 0.98rem; display: flex; gap: 10px; align-items: baseline; }
-    .{{ section_scope }} .original-price { text-decoration: line-through; color: #8b8b8b; }
-    .{{ section_scope }} .bundle-price-text { color: #c62828; font-weight: 700; }
-
-    .{{ section_scope }} .variant-selector-wrapper label {
-      display: block;
-      font-size: 0.85rem;
-      margin-bottom: 6px;
-      color: #444;
+    .{{ section_scope }} .product-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 0;
     }
 
     .{{ section_scope }} .bundle-variant-select {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #dedede;
-      border-radius: 10px;
-      background: #fff;
-      outline: none;
+        border: none;
+        background: transparent;
+        font-size: 0.9rem;
+        color: #777;
+        padding: 5px 0;
+        cursor: pointer;
+        font-family: inherit;
     }
 
-    .{{ section_scope }} .bundle-variant-select:focus {
-      border-color: #111;
-      box-shadow: 0 0 0 2px rgba(0,0,0,0.12);
+    .{{ section_scope }} .price-stack {
+        text-align: right;
+    }
+    .{{ section_scope }} .original-price {
+      text-decoration: line-through;
+      color: #aaa;
+      font-size: 0.9rem;
+      display: block;
+    }
+    .{{ section_scope }} .bundle-price-text {
+      font-weight: 600;
+      font-size: 1.1rem;
     }
 
     .{{ section_scope }} .bundle-footer {
-      border-top: 1px solid #eee;
-      padding-top: 18px;
-      display: grid;
-      gap: 12px;
-      justify-items: center;
-      text-align: center;
+      margin-top: 40px;
     }
 
-    .{{ section_scope }} .total-price-box { width: 100%; max-width: 520px; }
-    .{{ section_scope }} .bundle-total-row,
-    .{{ section_scope }} .bundle-savings-row {
+    .{{ section_scope }} .total-row {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
-      padding: 10px 12px;
-      border: 1px solid #efefef;
-      border-radius: 12px;
-      background: #fafafa;
+      align-items: center;
+      margin-bottom: 25px;
+    }
+    
+    .{{ section_scope }} .total-label {
+        font-weight: 700;
+        font-size: 1.2rem;
     }
 
-    .{{ section_scope }} .bundle-savings-row { background: #f5f7ff; border-color: #e7eaff; }
-
-    .{{ section_scope }} .final-price { font-weight: 800; color: #1f4fbf; font-size: 1.2rem; }
-
-    .{{ section_scope }} .bundle-savings { font-weight: 700; color: #0b7a2a; }
+    .{{ section_scope }} .final-price {
+      font-weight: 700;
+      font-size: 1.4rem;
+    }
+    
+    .{{ section_scope }} .bundle-savings-tag {
+        background: #D4E2D4;
+        color: #2D5A27;
+        font-size: 0.75rem;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-weight: 700;
+        margin-right: 10px;
+        text-transform: uppercase;
+    }
 
     .{{ section_scope }} .add-bundle-btn {
-      background: #000;
+      width: 100%;
+      background: #847561; 
       color: #fff;
       border: none;
-      padding: 12px 34px;
-      font-size: 1rem;
-      border-radius: 999px;
+      padding: 18px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border-radius: 4px;
       cursor: pointer;
-      transition: opacity .15s ease, transform .15s ease;
-      width: fit-content;
+      transition: opacity 0.2s;
     }
 
-    .{{ section_scope }} .add-bundle-btn:hover { opacity: 0.92; transform: translateY(-1px); }
-    .{{ section_scope }} .add-bundle-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-
-    .{{ section_scope }} .bundle-note { margin: 0; font-size: 0.85rem; color: #777; }
+    .{{ section_scope }} .add-bundle-btn:hover { opacity: 0.9; }
   </style>
 
   <script>
@@ -229,118 +260,67 @@
       const root = document.querySelector('.{{ section_scope }}[data-bundle-section]');
       if (!root) return;
 
-      function formatMoneyFromCents(cents) {
-        // Basic formatter using store currency symbol in Liquid, avoids locale issues
+      const formatMoney = (cents) => {
         const symbol = {{ currency_symbol | json }};
         return symbol + (cents / 100).toFixed(2);
-      }
+      };
 
-      function getBundleSelectors(bundleId) {
-        return root.querySelectorAll(`.bundle-variant-select[data-bundle-id="${bundleId}"]`);
-      }
-
-      function computeSavingsCents(bundleId) {
-        const selects = getBundleSelectors(bundleId);
-        let savings = 0;
-
+      const updateUI = (bundleId) => {
+        const wrapper = root.querySelector(`[data-bundle-id="${bundleId}"].add-bundle-btn`).closest('.bundle-wrapper');
+        const selects = wrapper.querySelectorAll('.bundle-variant-select');
+        const savingsRow = wrapper.querySelector('[data-bundle-savings-row]');
+        const savingsEl = wrapper.querySelector('[data-bundle-savings]');
+        
+        let totalSavings = 0;
         selects.forEach(sel => {
-          const target = parseInt(sel.getAttribute('data-target-price-cents') || '0', 10);
-          const opt = sel.options[sel.selectedIndex];
-          const original = parseInt(opt.getAttribute('data-variant-price-cents') || '0', 10);
-
-          if (original > target) savings += (original - target);
+          const target = parseInt(sel.dataset.targetPriceCents);
+          const original = parseInt(sel.options[sel.selectedIndex].dataset.variantPriceCents);
+          if (original > target) totalSavings += (original - target);
         });
 
-        return savings;
-      }
-
-      function updateBundleSavingsUI(bundleId) {
-        const wrapper = root.querySelector(`[data-add-bundle][data-bundle-id="${bundleId}"]`)?.closest('.bundle-wrapper');
-        if (!wrapper) return;
-
-        const row = wrapper.querySelector('[data-bundle-savings-row]');
-        const el = wrapper.querySelector('[data-bundle-savings]');
-        if (!row || !el) return;
-
-        const savingsCents = computeSavingsCents(bundleId);
-
-        if (savingsCents > 0) {
-          el.textContent = formatMoneyFromCents(savingsCents);
-          row.hidden = false;
+        if (totalSavings > 0) {
+          savingsEl.textContent = formatMoney(totalSavings);
+          savingsRow.hidden = false;
         } else {
-          row.hidden = true;
+          savingsRow.hidden = true;
         }
-      }
+      };
 
-      // Listen for variant changes to refresh savings
       root.addEventListener('change', (e) => {
-        const sel = e.target.closest('.bundle-variant-select');
-        if (!sel) return;
-        const bundleId = sel.getAttribute('data-bundle-id');
-        if (bundleId) updateBundleSavingsUI(bundleId);
+        if (e.target.classList.contains('bundle-variant-select')) {
+          updateUI(e.target.dataset.bundleId);
+        }
       });
 
-      // Initialize savings for each bundle on load
-      root.querySelectorAll('[data-add-bundle]').forEach(btn => {
-        updateBundleSavingsUI(btn.getAttribute('data-bundle-id'));
-      });
+      root.querySelectorAll('.add-bundle-btn').forEach(btn => updateUI(btn.dataset.bundleId));
 
-      async function addBundleToCart(bundleId, buttonEl) {
-        const selectors = getBundleSelectors(bundleId);
-        const items = [];
+      root.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-add-bundle]');
+        if (!btn) return;
 
-        selectors.forEach(select => {
-          const targetCents = parseInt(select.getAttribute('data-target-price-cents') || '0', 10);
-          const opt = select.options[select.selectedIndex];
-          const originalCents = parseInt(opt.getAttribute('data-variant-price-cents') || '0', 10);
+        const bundleId = btn.dataset.bundleId;
+        const selects = root.querySelectorAll(`.bundle-variant-select[data-bundle-id="${bundleId}"]`);
+        const items = Array.from(selects).map(sel => ({
+          id: Number(sel.value),
+          quantity: 1,
+          properties: { "_bundle_id": bundleId }
+        }));
 
-          const savedCents = Math.max(0, originalCents - targetCents);
-
-          items.push({
-            id: Number(select.value),
-            quantity: 1,
-            properties: {
-              "_bundle_id": bundleId,
-              "Saved": formatMoneyFromCents(savedCents)
-            }
-          });
-        });
-
-        buttonEl.disabled = true;
-        const oldText = buttonEl.textContent;
-        buttonEl.textContent = "Adding…";
+        btn.disabled = true;
+        btn.textContent = "Adding...";
 
         try {
-          const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+          await fetch(window.Shopify.routes.root + 'cart/add.js', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ items })
           });
-
-          if (!res.ok) {
-            buttonEl.disabled = false;
-            buttonEl.textContent = oldText;
-            alert("Some items are unavailable. Please pick different variants.");
-            return;
-          }
-
           window.location.href = '/cart';
         } catch (err) {
-          console.error(err);
-          buttonEl.disabled = false;
-          buttonEl.textContent = oldText;
-          alert("Something went wrong. Please try again.");
+          btn.disabled = false;
+          btn.textContent = "Buy Now";
+          alert("Error adding bundle.");
         }
-      }
-
-      root.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-add-bundle]');
-        if (!btn) return;
-
-        const bundleId = btn.getAttribute('data-bundle-id');
-        if (!bundleId) return;
-
-        addBundleToCart(bundleId, btn);
       });
     })();
   </script>
@@ -348,8 +328,15 @@
 
 {% schema %}
 {
-  "name": "Fixed Bundle",
+  "name": "Family Bundle Block",
   "target": "section",
-  "settings": []
+  "settings": [
+    {
+      "type": "image_picker",
+      "id": "custom_bundle_image",
+      "label": "Custom Bundle Image",
+      "info": "If left blank, the first product image will be used."
+    }
+  ]
 }
 {% endschema %}
