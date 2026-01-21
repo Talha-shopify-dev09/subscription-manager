@@ -16,28 +16,14 @@ import db from "../db.server";
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
 
-  // Fetch first 50 items for the selector dropdown
-  // (We fetch ALL items later in the Action when saving)
   const response = await admin.graphql(
     `#graphql
       query {
         products(first: 50) {
-          edges {
-            node {
-              id
-              title
-              priceRangeV2 { minVariantPrice { amount } }
-            }
-          }
+          edges { node { id title priceRangeV2 { minVariantPrice { amount } } } }
         }
         collections(first: 50) {
-          edges {
-            node {
-              id
-              title
-              productsCount { count }
-            }
-          }
+          edges { node { id title productsCount { count } } }
         }
       }
     `
@@ -45,16 +31,16 @@ export async function loader({ request }) {
   
   const responseJson = await response.json();
   
-  const products = responseJson.data.products.edges.map(edge => ({
-    id: edge.node.id,
-    title: edge.node.title,
-    price: edge.node.priceRangeV2.minVariantPrice.amount
+  const products = responseJson.data.products.edges.map(e => ({
+    id: e.node.id,
+    title: e.node.title,
+    price: e.node.priceRangeV2.minVariantPrice.amount
   }));
   
-  const collections = responseJson.data.collections.edges.map(edge => ({
-    id: edge.node.id,
-    title: edge.node.title,
-    productsCount: edge.node.productsCount.count
+  const collections = responseJson.data.collections.edges.map(e => ({
+    id: e.node.id,
+    title: e.node.title,
+    productsCount: e.node.productsCount.count
   }));
   
   const subscriptions = await db.subscription.findMany({
@@ -76,15 +62,13 @@ export async function action({ request }) {
     const id = formData.get("id");
     const shopifyGroupId = formData.get("shopifyGroupId");
     if (shopifyGroupId) {
-      try {
-        await admin.graphql(
-          `#graphql
-          mutation sellingPlanGroupDelete($id: ID!) {
-            sellingPlanGroupDelete(id: $id) { deletedSellingPlanGroupId }
-          }`,
-          { variables: { id: shopifyGroupId } }
-        );
-      } catch (err) { console.error(err); }
+      await admin.graphql(
+        `#graphql
+        mutation sellingPlanGroupDelete($id: ID!) {
+          sellingPlanGroupDelete(id: $id) { deletedSellingPlanGroupId }
+        }`,
+        { variables: { id: shopifyGroupId } }
+      );
     }
     await db.subscription.delete({ where: { id } });
     return Response.json({ success: true });
@@ -93,20 +77,16 @@ export async function action({ request }) {
   // 2. CREATE
   if (actionType === "create") {
     const type = formData.get("type");
-    const targetId = formData.get("targetId"); // Product ID or Collection ID
+    const targetId = formData.get("targetId");
     const targetTitle = formData.get("targetTitle");
     const originalPrice = formData.get("originalPrice");
     const plans = JSON.parse(formData.get("plans") || "[]");
 
-    // Construct Shopify Plans
+    // Construct Plans
     const sellingPlansToCreate = plans.map((plan, index) => {
       const billingPolicy = {
-        recurring: { 
-          interval: plan.interval, 
-          intervalCount: parseInt(plan.intervalCount) 
-        }
+        recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) }
       };
-
       if (plan.maxCycles && parseInt(plan.maxCycles) > 0) {
         billingPolicy.recurring.maxCycles = parseInt(plan.maxCycles);
       }
@@ -120,18 +100,11 @@ export async function action({ request }) {
         options: [`Every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s)`],
         position: index + 1,
         category: "SUBSCRIPTION", 
-        billingPolicy: billingPolicy,
-        deliveryPolicy: {
-          recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) }
-        },
-        pricingPolicies: [
-          {
-            fixed: {
-              adjustmentType: "PERCENTAGE",
-              adjustmentValue: { percentage: parseFloat(plan.discount) }
-            }
-          }
-        ]
+        billingPolicy,
+        deliveryPolicy: { recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) } },
+        pricingPolicies: [{
+          fixed: { adjustmentType: "PERCENTAGE", adjustmentValue: { percentage: parseFloat(plan.discount) } }
+        }]
       };
     });
 
@@ -143,12 +116,7 @@ export async function action({ request }) {
           sellingPlanGroup {
             id
             sellingPlans(first: 10) {
-              edges {
-                node {
-                  id
-                  billingPolicy { ... on SellingPlanRecurringBillingPolicy { interval intervalCount } }
-                }
-              }
+              edges { node { id billingPolicy { ... on SellingPlanRecurringBillingPolicy { interval intervalCount } } } }
             }
           }
           userErrors { field message }
@@ -161,7 +129,7 @@ export async function action({ request }) {
             merchantCode: `sub-${targetId}-${Date.now()}`,
             options: ["Delivery Interval"],
             position: 1,
-            sellingPlansToCreate: sellingPlansToCreate
+            sellingPlansToCreate
           }
         }
       }
@@ -174,7 +142,7 @@ export async function action({ request }) {
 
     const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
 
-    // --- ATTACH LOGIC (CRITICAL UPDATES HERE) ---
+    // --- YOUR REQUESTED TECHNIQUE: EXPLICIT PRODUCT ATTACHMENT ---
     
     // CASE A: Single Product
     if (type === "product") {
@@ -187,64 +155,68 @@ export async function action({ request }) {
       );
     } 
     
-    // CASE B: Collection (Batching Logic)
+    // CASE B: Collection (The "Iterate and Apply" Technique)
     else if (type === "collection") {
-      console.log(`Starting collection attachment for: ${targetId}`);
-      
-      let allProductIds = [];
-      let hasNextPage = true;
-      let endCursor = null;
+       console.log(`Step 1: Fetching all products in collection ${targetId}`);
+       
+       // 1. FETCH ALL PRODUCTS IN COLLECTION
+       let allProductIds = [];
+       let hasNextPage = true;
+       let cursor = null;
 
-      // 1. Fetch ALL Product IDs using Pagination
-      while (hasNextPage) {
-        const query = `#graphql
-          query getCollectionProducts($id: ID!, $cursor: String) {
-            collection(id: $id) {
-              products(first: 250, after: $cursor) {
-                pageInfo { hasNextPage endCursor }
-                edges { node { id } }
-              }
-            }
-          }`;
+       while (hasNextPage) {
+         const query = `#graphql
+           query getCollectionProducts($id: ID!, $cursor: String) {
+             collection(id: $id) {
+               products(first: 250, after: $cursor) {
+                 pageInfo { hasNextPage endCursor }
+                 edges { node { id } }
+               }
+             }
+           }`;
 
-        const cResponse = await admin.graphql(query, { variables: { id: targetId, cursor: endCursor } });
-        const cData = await cResponse.json();
-        
-        const edges = cData.data.collection?.products?.edges || [];
-        const ids = edges.map(e => e.node.id);
-        allProductIds.push(...ids);
+         const cResponse = await admin.graphql(query, { variables: { id: targetId, cursor } });
+         const cData = await cResponse.json();
+         
+         const productsData = cData.data?.collection?.products;
+         if (!productsData) break;
 
-        hasNextPage = cData.data.collection?.products?.pageInfo?.hasNextPage;
-        endCursor = cData.data.collection?.products?.pageInfo?.endCursor;
-        
-        console.log(`Fetched ${ids.length} products. Total gathered: ${allProductIds.length}`);
-      }
+         const ids = productsData.edges.map(e => e.node.id);
+         allProductIds.push(...ids);
 
-      // 2. Attach in BATCHES of 250 (To avoid API Limits)
-      const BATCH_SIZE = 250;
-      for (let i = 0; i < allProductIds.length; i += BATCH_SIZE) {
-        const batch = allProductIds.slice(i, i + BATCH_SIZE);
-        console.log(`Attaching batch ${i/BATCH_SIZE + 1} with ${batch.length} products...`);
-        
-        const attachResponse = await admin.graphql(
-          `#graphql
-          mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
-            sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
+         hasNextPage = productsData.pageInfo.hasNextPage;
+         cursor = productsData.pageInfo.endCursor;
+       }
+
+       console.log(`Step 2: Found ${allProductIds.length} products. Applying subscription...`);
+
+       // 2. APPLY SUBSCRIPTION TO ALL FOUND PRODUCTS
+       if (allProductIds.length > 0) {
+         const attachResponse = await admin.graphql(
+           `#graphql
+           mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
+             sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
                sellingPlanGroup { id }
                userErrors { field message }
-            }
-          }`,
-          { variables: { id: newGroup.id, productIds: batch } }
-        );
-        
-        const attachJson = await attachResponse.json();
-        if(attachJson.data?.sellingPlanGroupAddProducts?.userErrors?.length > 0) {
-             console.error("Batch Error:", attachJson.data.sellingPlanGroupAddProducts.userErrors);
-        }
-      }
+             }
+           }`,
+           { variables: { id: newGroup.id, productIds: allProductIds } }
+         );
+         
+         const attachJson = await attachResponse.json();
+         
+         if (attachJson.data?.sellingPlanGroupAddProducts?.userErrors?.length > 0) {
+             console.error("Error applying subscription:", attachJson.data.sellingPlanGroupAddProducts.userErrors);
+             return Response.json({ error: "Failed to apply to products" }, { status: 400 });
+         } else {
+             console.log("Success: Subscription applied to all collection products.");
+         }
+       } else {
+         console.warn("Collection is empty. Nothing to attach.");
+       }
     }
 
-    // Map IDs for DB
+    // Map IDs
     const shopifyPlanIdsMap = {};
     newGroup.sellingPlans.edges.forEach(({ node }) => {
        const interval = node.billingPolicy.interval;
@@ -256,13 +228,10 @@ export async function action({ request }) {
        });
     });
 
-    // Save to DB
     await db.subscription.create({
       data: {
         shop: session.shop,
-        type, 
-        targetId, 
-        targetTitle, 
+        type, targetId, targetTitle, 
         originalPrice: originalPrice || "0",
         plansData: JSON.stringify(plans),
         shopifyGroupId: newGroup.id,
@@ -274,7 +243,6 @@ export async function action({ request }) {
   return Response.json({ success: true });
 }
 
-// --- REACT COMPONENT ---
 export default function Subscriptions() {
   const { subscriptions, products, collections } = useLoaderData();
   const fetcher = useFetcher();
@@ -284,24 +252,18 @@ export default function Subscriptions() {
   const [subscriptionType, setSubscriptionType] = useState("product");
   const [plans, setPlans] = useState([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
   const [formData, setFormData] = useState({ targetId: "", targetTitle: "", originalPrice: "" });
-
   const isLoading = ["loading", "submitting"].includes(fetcher.state);
 
   const addPlan = () => setPlans([...plans, { interval: "MONTH", intervalCount: 1, discount: 0, maxCycles: "" }]);
   const removePlan = (index) => {
-    const newPlans = [...plans];
-    newPlans.splice(index, 1);
-    setPlans(newPlans);
+    const newPlans = [...plans]; newPlans.splice(index, 1); setPlans(newPlans);
   };
   const updatePlan = (index, field, value) => {
-    const newPlans = [...plans];
-    newPlans[index][field] = value;
-    setPlans(newPlans);
+    const newPlans = [...plans]; newPlans[index][field] = value; setPlans(newPlans);
   };
 
   const handleCancel = useCallback(() => {
-    setShowModal(false);
-    setSubscriptionType("product");
+    setShowModal(false); setSubscriptionType("product");
     setPlans([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
     setFormData({ targetId: "", targetTitle: "", originalPrice: "" });
   }, []);
@@ -318,7 +280,6 @@ export default function Subscriptions() {
 
   const handleSave = useCallback(() => {
     if (!formData.targetId) return shopify.toast.show("Please select a target", { isError: true });
-    
     const data = new FormData();
     data.append("action", "create");
     data.append("type", subscriptionType);
@@ -326,13 +287,12 @@ export default function Subscriptions() {
     data.append("targetTitle", formData.targetTitle);
     data.append("originalPrice", formData.originalPrice);
     data.append("plans", JSON.stringify(plans));
-    
     fetcher.submit(data, { method: "post" });
   }, [formData, subscriptionType, plans, fetcher, shopify]);
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success) {
-      shopify.toast.show("Subscription created!");
+      shopify.toast.show("Subscription created & applied to all products!");
       handleCancel();
     }
   }, [fetcher.state, fetcher.data, handleCancel, shopify]);
@@ -357,27 +317,17 @@ export default function Subscriptions() {
               ) : (
                 <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={subscriptions.length} headings={[{ title: 'Target' }, { title: 'Plans' }, { title: 'Action' }]}>
                   {subscriptions.map((sub, index) => {
-                    let plansDisplay = [];
-                    try { plansDisplay = JSON.parse(sub.plansData || '[]'); } catch(e){}
+                    let plansDisplay = []; try { plansDisplay = JSON.parse(sub.plansData || '[]'); } catch(e){}
                     return (
                       <IndexTable.Row id={sub.id} key={sub.id} position={index}>
                         <IndexTable.Cell><Text fontWeight="bold">{sub.targetTitle}</Text></IndexTable.Cell>
                         <IndexTable.Cell>
                           <InlineStack gap="100" wrap>
-                            {plansDisplay.map((p, i) => (
-                              <Badge key={i} tone="info">
-                                Every {p.intervalCount} {p.interval.toLowerCase()} 
-                              </Badge>
-                            ))}
+                            {plansDisplay.map((p, i) => <Badge key={i} tone="info">Every {p.intervalCount} {p.interval.toLowerCase()}</Badge>)}
                           </InlineStack>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Button size="slim" tone="critical" onClick={() => {
-                             if(confirm("Delete?")) {
-                               const d = new FormData(); d.append("action", "delete"); d.append("id", sub.id); d.append("shopifyGroupId", sub.shopifyGroupId);
-                               fetcher.submit(d, { method: "post" });
-                             }
-                          }}>Delete</Button>
+                          <Button size="slim" tone="critical" onClick={() => { if(confirm("Delete?")) { const d = new FormData(); d.append("action", "delete"); d.append("id", sub.id); d.append("shopifyGroupId", sub.shopifyGroupId); fetcher.submit(d, { method: "post" }); }}}>Delete</Button>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     );
@@ -387,7 +337,6 @@ export default function Subscriptions() {
             </Card>
           </Layout.Section>
         </Layout>
-
         <Modal open={showModal} onClose={handleCancel} title="Create Subscription Plan" primaryAction={{ content: 'Save', onAction: handleSave, loading: isLoading }}>
           <Modal.Section>
             <FormLayout>
