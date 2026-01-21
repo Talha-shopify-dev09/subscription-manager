@@ -14,22 +14,171 @@
 </div>
 
 <style>
-  .sw-wrapper { margin: 20px 0; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; max-width: 450px; }
-  .sw-header { background: #f9fafb; padding: 10px 15px; border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #374151; }
-  .sw-option-row { display: flex; align-items: flex-start; padding: 15px; cursor: pointer; border-bottom: 1px solid #f3f4f6; }
-  .sw-option-row:hover { background-color: #f9fafb; }
-  .sw-radio-container { margin-right: 12px; margin-top: 2px; }
-  .sw-info { flex: 1; display: flex; flex-direction: column; }
-  .sw-top-line { display: flex; justify-content: space-between; align-items: center; width: 100%; }
-  .sw-label-text { font-weight: 600; color: #111827; }
-  .sw-price-text { color: #374151; }
-  .sw-plan-selector { margin-top: 10px; display: none; padding-top: 10px; border-top: 1px solid #f3f4f6; }
-  .sw-select { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
-  .sw-badge { background-color: #d1fae5; color: #059669; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 8px; }
-  .sw-footer { padding: 15px; background: #fff; border-top: 1px solid #e5e7eb; }
-  .sw-btn { width: 100%; background-color: {{ section.settings.accent_color }}; color: #fff; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
-  .sw-btn:hover { opacity: 0.9; }
-  .sw-error { color: #ef4444; font-size: 13px; margin-top: 10px; text-align: center; display: none; }
+  /* =========================
+     Styling only, functionality unchanged
+     Target: layout like reference image
+  ========================= */
+
+  /* Wrapper */
+  .sw-wrapper {
+    border: none;
+    max-width: 100%;
+    background: transparent;
+    margin: 24px 0;
+  }
+
+  /* Header */
+  .sw-header {
+    background: transparent;
+    border: none;
+    padding: 0 0 12px;
+    font-size: 16px;
+    font-weight: 500;
+    color: #111;
+  }
+
+  /* Option card */
+  .sw-option-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 16px;
+    border: 1.5px solid #111;
+    border-radius: 16px;
+    margin-bottom: 14px;
+    background: #fff;
+    cursor: pointer;
+  }
+
+  .sw-option-row:hover {
+    background: #fff;
+  }
+
+  /* Radio container */
+  .sw-radio-container {
+    margin: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Radio */
+  .sw-radio-container input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #111;
+    cursor: pointer;
+  }
+
+  /* Info layout */
+  .sw-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Top row: label left, price right */
+  .sw-top-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+  }
+
+  /* Label */
+  .sw-label-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: #111;
+    line-height: 1.2;
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  /* Price */
+  .sw-price-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: #111;
+    white-space: nowrap;
+  }
+
+  /* Strikethrough original price */
+  .sw-price-text del {
+    color: #888;
+    font-weight: 400;
+    margin-left: 8px;
+  }
+
+  /* SAVE badge */
+  .sw-badge {
+    background: #111;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 999px;
+    margin-left: 10px;
+    letter-spacing: 0.2px;
+  }
+
+  /* Plan selector */
+  .sw-plan-selector {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #e5e5e5;
+    display: none; /* keep same behavior (JS toggles) */
+  }
+
+  .sw-select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 14px;
+    background: #fff;
+  }
+
+  /* Footer */
+  .sw-footer {
+    padding: 0;
+    background: transparent;
+    border: none;
+    margin-top: 16px;
+  }
+
+  /* Button */
+  .sw-btn {
+    width: 100%;
+    background-color: {{ section.settings.accent_color }};
+    color: #fff;
+    padding: 14px;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 15px;
+  }
+
+  .sw-btn:hover {
+    opacity: 0.92;
+  }
+
+  /* Error */
+  .sw-error {
+    color: #ef4444;
+    font-size: 13px;
+    margin-top: 10px;
+    text-align: center;
+    display: none;
+  }
+
+  /* Optional: highlight selected option (CSS-only) */
+  .sw-option-row:has(input[type="radio"]:checked) {
+    outline: 2px solid #111;
+    outline-offset: 0;
+  }
 </style>
 
 <script>
