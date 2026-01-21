@@ -5,26 +5,54 @@ import { authenticate } from "../shopify.server";
 import {
   AppProvider, Page, Layout, Card, Button, Text, TextField, Select,
   BlockStack, InlineStack, Banner, Badge, IndexTable, Modal, FormLayout,
-  EmptyState, Divider, Box
+  EmptyState, Divider, Box, ResourceList, ResourceItem, Thumbnail, Spinner
 } from "@shopify/polaris";
 import { DeleteIcon, PlusIcon } from "@shopify/polaris-icons";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import { TitleBar } from "@shopify/app-bridge-react";
 import db from "../db.server"; 
 
-// --- LOADER ---
+// --- LOADER (Handles Initial Data AND Collection Fetching) ---
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const collectionIdToFetch = url.searchParams.get("collection_id");
 
+  // A. AJAX: Fetch Products for a specific Collection
+  if (collectionIdToFetch) {
+      const response = await admin.graphql(
+        `#graphql
+        query getCollectionProducts($id: ID!) {
+          collection(id: $id) {
+            products(first: 250) {
+              edges {
+                node {
+                  id
+                  title
+                  images(first: 1) { nodes { originalSrc } }
+                }
+              }
+            }
+          }
+        }`,
+        { variables: { id: collectionIdToFetch } }
+      );
+      const json = await response.json();
+      const products = json.data?.collection?.products?.edges.map(e => ({
+          id: e.node.id,
+          title: e.node.title,
+          image: e.node.images.nodes[0]?.originalSrc
+      })) || [];
+      
+      return { collectionProducts: products };
+  }
+
+  // B. STANDARD LOAD: Fetch Lists
   const response = await admin.graphql(
     `#graphql
       query {
-        products(first: 50) {
-          edges { node { id title priceRangeV2 { minVariantPrice { amount } } } }
-        }
-        collections(first: 50) {
-          edges { node { id title productsCount { count } } }
-        }
+        products(first: 50) { edges { node { id title priceRangeV2 { minVariantPrice { amount } } } } }
+        collections(first: 50) { edges { node { id title } } }
       }
     `
   );
@@ -32,15 +60,11 @@ export async function loader({ request }) {
   const responseJson = await response.json();
   
   const products = responseJson.data.products.edges.map(e => ({
-    id: e.node.id,
-    title: e.node.title,
-    price: e.node.priceRangeV2.minVariantPrice.amount
+    id: e.node.id, title: e.node.title, price: e.node.priceRangeV2.minVariantPrice.amount
   }));
   
   const collections = responseJson.data.collections.edges.map(e => ({
-    id: e.node.id,
-    title: e.node.title,
-    productsCount: e.node.productsCount.count
+    id: e.node.id, title: e.node.title
   }));
   
   const subscriptions = await db.subscription.findMany({
@@ -77,10 +101,12 @@ export async function action({ request }) {
   // 2. CREATE
   if (actionType === "create") {
     const type = formData.get("type");
-    const targetId = formData.get("targetId");
-    const targetTitle = formData.get("targetTitle");
+    const targetTitle = formData.get("targetTitle"); // Collection Name or Product Name
     const originalPrice = formData.get("originalPrice");
     const plans = JSON.parse(formData.get("plans") || "[]");
+    
+    // THIS IS THE TRICK: We receive the list of IDs explicitly
+    const targetIds = JSON.parse(formData.get("targetIds") || "[]");
 
     // Construct Plans
     const sellingPlansToCreate = plans.map((plan, index) => {
@@ -113,12 +139,7 @@ export async function action({ request }) {
       `#graphql
       mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!) {
         sellingPlanGroupCreate(input: $input) {
-          sellingPlanGroup {
-            id
-            sellingPlans(first: 10) {
-              edges { node { id billingPolicy { ... on SellingPlanRecurringBillingPolicy { interval intervalCount } } } }
-            }
-          }
+          sellingPlanGroup { id sellingPlans(first: 10) { edges { node { id billingPolicy { ... on SellingPlanRecurringBillingPolicy { interval intervalCount } } } } } }
           userErrors { field message }
         }
       }`,
@@ -126,7 +147,7 @@ export async function action({ request }) {
         variables: {
           input: {
             name: `Subscription: ${targetTitle}`,
-            merchantCode: `sub-${targetId}-${Date.now()}`,
+            merchantCode: `sub-${Date.now()}`,
             options: ["Delivery Interval"],
             position: 1,
             sellingPlansToCreate
@@ -142,56 +163,12 @@ export async function action({ request }) {
 
     const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
 
-    // --- YOUR REQUESTED TECHNIQUE: EXPLICIT PRODUCT ATTACHMENT ---
-    
-    // CASE A: Single Product
-    if (type === "product") {
-      await admin.graphql(
-        `#graphql
-        mutation productJoinSellingPlanGroups($id: ID!, $sellingPlanGroupIds: [ID!]!) {
-          productJoinSellingPlanGroups(id: $id, sellingPlanGroupIds: $sellingPlanGroupIds) { product { id } }
-        }`,
-        { variables: { id: targetId, sellingPlanGroupIds: [newGroup.id] } }
-      );
-    } 
-    
-    // CASE B: Collection (The "Iterate and Apply" Technique)
-    else if (type === "collection") {
-       console.log(`Step 1: Fetching all products in collection ${targetId}`);
-       
-       // 1. FETCH ALL PRODUCTS IN COLLECTION
-       let allProductIds = [];
-       let hasNextPage = true;
-       let cursor = null;
-
-       while (hasNextPage) {
-         const query = `#graphql
-           query getCollectionProducts($id: ID!, $cursor: String) {
-             collection(id: $id) {
-               products(first: 250, after: $cursor) {
-                 pageInfo { hasNextPage endCursor }
-                 edges { node { id } }
-               }
-             }
-           }`;
-
-         const cResponse = await admin.graphql(query, { variables: { id: targetId, cursor } });
-         const cData = await cResponse.json();
+    // --- ATTACH PRODUCTS (Explicitly) ---
+    // Whether it was 1 product or a collection of 3, we now have an array of IDs.
+    if (targetIds.length > 0) {
+         console.log(`Attaching ${targetIds.length} products explicitly...`);
          
-         const productsData = cData.data?.collection?.products;
-         if (!productsData) break;
-
-         const ids = productsData.edges.map(e => e.node.id);
-         allProductIds.push(...ids);
-
-         hasNextPage = productsData.pageInfo.hasNextPage;
-         cursor = productsData.pageInfo.endCursor;
-       }
-
-       console.log(`Step 2: Found ${allProductIds.length} products. Applying subscription...`);
-
-       // 2. APPLY SUBSCRIPTION TO ALL FOUND PRODUCTS
-       if (allProductIds.length > 0) {
+         // Batching is good practice even for small lists, but for <250 we can do one shot.
          const attachResponse = await admin.graphql(
            `#graphql
            mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
@@ -200,23 +177,11 @@ export async function action({ request }) {
                userErrors { field message }
              }
            }`,
-           { variables: { id: newGroup.id, productIds: allProductIds } }
+           { variables: { id: newGroup.id, productIds: targetIds } }
          );
-         
-         const attachJson = await attachResponse.json();
-         
-         if (attachJson.data?.sellingPlanGroupAddProducts?.userErrors?.length > 0) {
-             console.error("Error applying subscription:", attachJson.data.sellingPlanGroupAddProducts.userErrors);
-             return Response.json({ error: "Failed to apply to products" }, { status: 400 });
-         } else {
-             console.log("Success: Subscription applied to all collection products.");
-         }
-       } else {
-         console.warn("Collection is empty. Nothing to attach.");
-       }
     }
 
-    // Map IDs
+    // Save to DB
     const shopifyPlanIdsMap = {};
     newGroup.sellingPlans.edges.forEach(({ node }) => {
        const interval = node.billingPolicy.interval;
@@ -231,7 +196,10 @@ export async function action({ request }) {
     await db.subscription.create({
       data: {
         shop: session.shop,
-        type, targetId, targetTitle, 
+        type, 
+        // We save the first ID as the "primary" target for reference, or the Collection ID
+        targetId: targetIds[0], 
+        targetTitle, 
         originalPrice: originalPrice || "0",
         plansData: JSON.stringify(plans),
         shopifyGroupId: newGroup.id,
@@ -245,57 +213,86 @@ export async function action({ request }) {
 
 export default function Subscriptions() {
   const { subscriptions, products, collections } = useLoaderData();
-  const fetcher = useFetcher();
+  const fetcher = useFetcher(); // Used for Saving
+  const collectionFetcher = useFetcher(); // Used for fetching collection products
   const shopify = useAppBridge();
   
   const [showModal, setShowModal] = useState(false);
   const [subscriptionType, setSubscriptionType] = useState("product");
   const [plans, setPlans] = useState([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
-  const [formData, setFormData] = useState({ targetId: "", targetTitle: "", originalPrice: "" });
+  
+  // UI State
+  const [selectedTitle, setSelectedTitle] = useState("");
+  const [selectedPrice, setSelectedPrice] = useState("");
+  const [targetIds, setTargetIds] = useState([]); // Array of Product IDs to save
+  const [previewProducts, setPreviewProducts] = useState([]); // For display
+
   const isLoading = ["loading", "submitting"].includes(fetcher.state);
 
+  // --- HANDLERS ---
   const addPlan = () => setPlans([...plans, { interval: "MONTH", intervalCount: 1, discount: 0, maxCycles: "" }]);
-  const removePlan = (index) => {
-    const newPlans = [...plans]; newPlans.splice(index, 1); setPlans(newPlans);
-  };
-  const updatePlan = (index, field, value) => {
-    const newPlans = [...plans]; newPlans[index][field] = value; setPlans(newPlans);
-  };
+  const removePlan = (index) => { const n = [...plans]; n.splice(index, 1); setPlans(n); };
+  const updatePlan = (index, field, value) => { const n = [...plans]; n[index][field] = value; setPlans(n); };
 
   const handleCancel = useCallback(() => {
     setShowModal(false); setSubscriptionType("product");
     setPlans([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
-    setFormData({ targetId: "", targetTitle: "", originalPrice: "" });
+    setTargetIds([]); setPreviewProducts([]); setSelectedTitle(""); setSelectedPrice("");
   }, []);
 
+  // 1. Single Product Selected
   const handleProductSelect = useCallback((value) => {
     const product = products.find(p => p.id === value);
-    if (product) setFormData(prev => ({ ...prev, targetId: product.id, targetTitle: product.title, originalPrice: product.price }));
+    if (product) {
+        setTargetIds([product.id]); // Just one ID
+        setSelectedTitle(product.title);
+        setSelectedPrice(product.price);
+        setPreviewProducts([{ id: product.id, title: product.title }]);
+    }
   }, [products]);
 
+  // 2. Collection Selected (Triggers Fetch)
   const handleCollectionSelect = useCallback((value) => {
     const collection = collections.find(c => c.id === value);
-    if (collection) setFormData(prev => ({ ...prev, targetId: collection.id, targetTitle: collection.title, originalPrice: "N/A" }));
-  }, [collections]);
+    if (collection) {
+        setSelectedTitle(collection.title);
+        setSelectedPrice("N/A");
+        // Trigger Loader to get products
+        collectionFetcher.load(`/app/subscriptions?collection_id=${collection.id}`);
+    }
+  }, [collections, collectionFetcher]);
+
+  // 3. Listen for Collection Fetch Results
+  useEffect(() => {
+      if (collectionFetcher.data && collectionFetcher.data.collectionProducts) {
+          const prods = collectionFetcher.data.collectionProducts;
+          setPreviewProducts(prods);
+          // Auto-select ALL products in the collection
+          const ids = prods.map(p => p.id);
+          setTargetIds(ids);
+      }
+  }, [collectionFetcher.data]);
 
   const handleSave = useCallback(() => {
-    if (!formData.targetId) return shopify.toast.show("Please select a target", { isError: true });
+    if (targetIds.length === 0) return shopify.toast.show("No products selected", { isError: true });
+    
     const data = new FormData();
     data.append("action", "create");
     data.append("type", subscriptionType);
-    data.append("targetId", formData.targetId);
-    data.append("targetTitle", formData.targetTitle);
-    data.append("originalPrice", formData.originalPrice);
+    data.append("targetTitle", selectedTitle);
+    data.append("originalPrice", selectedPrice);
+    data.append("targetIds", JSON.stringify(targetIds)); // Send the explicit list
     data.append("plans", JSON.stringify(plans));
+    
     fetcher.submit(data, { method: "post" });
-  }, [formData, subscriptionType, plans, fetcher, shopify]);
+  }, [targetIds, subscriptionType, selectedTitle, selectedPrice, plans, fetcher, shopify]);
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success) {
-      shopify.toast.show("Subscription created & applied to all products!");
+      shopify.toast.show("Subscription applied to " + targetIds.length + " products!");
       handleCancel();
     }
-  }, [fetcher.state, fetcher.data, handleCancel, shopify]);
+  }, [fetcher.state, fetcher.data, handleCancel, shopify, targetIds.length]);
 
   const productOptions = [{ label: 'Select product', value: '' }, ...products.map(p => ({ label: `${p.title}`, value: p.id }))];
   const collectionOptions = [{ label: 'Select collection', value: '' }, ...collections.map(c => ({ label: c.title, value: c.id }))];
@@ -340,12 +337,33 @@ export default function Subscriptions() {
         <Modal open={showModal} onClose={handleCancel} title="Create Subscription Plan" primaryAction={{ content: 'Save', onAction: handleSave, loading: isLoading }}>
           <Modal.Section>
             <FormLayout>
-              <Select label="Type" options={[{ label: 'Product', value: 'product' }, { label: 'Collection', value: 'collection' }]} value={subscriptionType} onChange={setSubscriptionType} />
+              <Select label="Type" options={[{ label: 'Product', value: 'product' }, { label: 'Collection', value: 'collection' }]} value={subscriptionType} onChange={(v) => { setSubscriptionType(v); setTargetIds([]); setPreviewProducts([]); }} />
+              
+              {/* SELECTOR */}
               {subscriptionType === 'product' ? (
-                <Select label="Select Product" options={productOptions} value={formData.targetId} onChange={handleProductSelect} />
+                <Select label="Select Product" options={productOptions} onChange={handleProductSelect} />
               ) : (
-                <Select label="Select Collection" options={collectionOptions} value={formData.targetId} onChange={handleCollectionSelect} />
+                <Select label="Select Collection" options={collectionOptions} onChange={handleCollectionSelect} />
               )}
+              
+              {/* PREVIEW OF TARGETS */}
+              {collectionFetcher.state === "loading" && <Spinner size="small" />}
+              {previewProducts.length > 0 && (
+                  <Box background="bg-surface-secondary" padding="300" borderRadius="200">
+                      <Text variant="bodyMd" fontWeight="bold">Applying to {previewProducts.length} products:</Text>
+                      <div style={{maxHeight: '150px', overflowY: 'auto', marginTop: '10px'}}>
+                          <BlockStack gap="200">
+                              {previewProducts.map(p => (
+                                  <InlineStack key={p.id} align="start" gap="200">
+                                      {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
+                                      <Text variant="bodySm">{p.title}</Text>
+                                  </InlineStack>
+                              ))}
+                          </BlockStack>
+                      </div>
+                  </Box>
+              )}
+
               <Divider />
               <InlineStack align="space-between"><Text variant="headingSm">Intervals</Text><Button icon={PlusIcon} onClick={addPlan}>Add</Button></InlineStack>
               <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
