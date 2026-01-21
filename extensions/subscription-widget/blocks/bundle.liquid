@@ -1,72 +1,156 @@
 {% assign bundles = shop.metafields.my_app.active_bundles.value %}
 
-<div class="bundle-widget" style="padding: 20px; border: 1px solid #ddd; margin: 20px 0;">
-  <h3>📦 Special Bundles</h3>
-  
-  {% if bundles == blank %}
-    <p>No active bundles at the moment.</p>
-  {% else %}
+{% if bundles != blank %}
+  <div class="bundle-container">
     {% for bundle in bundles %}
-      <div class="bundle-item" style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 8px;">
-        <h4 style="margin-top: 0;">{{ bundle.title }}</h4>
+      <div class="bundle-wrapper">
+        <h2 class="bundle-title">{{ bundle.title }}</h2>
         
-        <ul style="margin: 10px 0; padding-left: 20px;">
-          {% for variantId in bundle.products %}
-             {% comment %} 
-               Ideally, you'd loop through all_products to find titles, 
-               but that can be slow. For now, we count items.
-             {% endcomment %}
-             <li>Item #{{ forloop.index }} included</li> 
-          {% endfor %}
-        </ul>
-        
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
-          <span style="font-weight: bold; font-size: 1.1em;">
-            {% if bundle.price != blank %}
-              ${{ bundle.price }}
-            {% else %}
-              See price in cart
+        <div class="bundle-grid">
+          {% for product_info in bundle.products %}
+            {% assign prod = all_products[product_info.handle] %}
+            
+            {% if prod != empty %}
+              <div class="product-card">
+                <div class="image-wrapper">
+                  <img src="{{ prod.featured_image | img_url: '400x' }}" alt="{{ prod.title }}" loading="lazy">
+                </div>
+                
+                <div class="product-info">
+                  <h4 class="product-title">{{ prod.title }}</h4>
+                  <p class="product-price">{{ prod.price | money }}</p>
+                  
+                  <div class="variant-selector-wrapper">
+                    <label>Select Option:</label>
+                    <select class="bundle-variant-select" data-bundle-id="{{ bundle.id }}">
+                      {% for variant in prod.variants %}
+                        <option value="{{ variant.id }}" data-price="{{ variant.price }}">
+                          {{ variant.title }}
+                        </option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
             {% endif %}
-          </span>
+          {% endfor %}
+        </div>
+
+        <div class="bundle-footer">
+          <div class="total-price-box">
+             Bundle Price: 
+             {% if bundle.price != blank %}
+               <span class="final-price">${{ bundle.price }}</span>
+             {% else %}
+               <span class="final-price">Calculated at Checkout</span>
+             {% endif %}
+          </div>
 
           <button 
-            onclick="addBundleToCart({{ bundle.products | json | replace: '"', "'" }})"
-            style="background: black; color: white; padding: 10px 20px; border: none; cursor: pointer; border-radius: 4px;">
+            class="add-bundle-btn"
+            onclick="addBundleToCart('{{ bundle.id }}')">
             Add Bundle to Cart
           </button>
         </div>
       </div>
     {% endfor %}
-  {% endif %}
-</div>
+  </div>
 
-<script>
-  function addBundleToCart(variantGids) {
-    // 1. Clean IDs: Remove "gid://shopify/ProductVariant/" to get just the numbers
-    const items = variantGids.map(gid => {
-      const id = gid.split('/').pop(); 
-      return { id: id, quantity: 1 };
-    });
+  <style>
+    .bundle-container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }
+    .bundle-wrapper { border: 1px solid #e5e5e5; border-radius: 12px; padding: 30px; margin-bottom: 40px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .bundle-title { text-align: center; margin-bottom: 30px; font-size: 2rem; }
+    
+    .bundle-grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+      gap: 20px; 
+      margin-bottom: 30px; 
+    }
 
-    console.log("Adding items:", items);
+    .product-card { 
+      border: 1px solid #eee; 
+      border-radius: 8px; 
+      overflow: hidden; 
+      transition: transform 0.2s;
+    }
+    .product-card:hover { transform: translateY(-5px); }
 
-    // 2. Use Shopify AJAX API to add items
-    fetch(window.Shopify.routes.root + 'cart/add.js', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: items })
-    })
-    .then(response => response.json())
-    .then(data => {
-      // 3. Redirect to Cart on success
-      window.location.href = '/cart';
-    })
-    .catch((error) => {
-      console.error('Error:', error);
-      alert('Failed to add bundle. Check console for details.');
-    });
-  }
-</script>
+    .image-wrapper { height: 200px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #f9f9f9; }
+    .image-wrapper img { max-height: 100%; max-width: 100%; object-fit: contain; }
+
+    .product-info { padding: 15px; }
+    .product-title { margin: 0 0 5px; font-size: 1rem; font-weight: 600; min-height: 40px; }
+    .product-price { color: #666; font-size: 0.9rem; margin-bottom: 15px; }
+
+    .variant-selector-wrapper label { display: block; font-size: 0.8rem; margin-bottom: 5px; color: #444; }
+    .bundle-variant-select { 
+      width: 100%; 
+      padding: 8px; 
+      border: 1px solid #ddd; 
+      border-radius: 4px; 
+      background: white; 
+    }
+
+    .bundle-footer { 
+      text-align: center; 
+      border-top: 1px solid #eee; 
+      padding-top: 20px; 
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+      gap: 15px; 
+    }
+    .total-price-box { font-size: 1.2rem; }
+    .final-price { font-weight: bold; color: #2c6ecb; }
+
+    .add-bundle-btn { 
+      background: #000; 
+      color: #fff; 
+      border: none; 
+      padding: 12px 40px; 
+      font-size: 1rem; 
+      border-radius: 50px; 
+      cursor: pointer; 
+      transition: background 0.2s;
+    }
+    .add-bundle-btn:hover { background: #333; }
+  </style>
+
+  <script>
+    function addBundleToCart(bundleId) {
+      // 1. Find all dropdowns specifically for this bundle
+      const selectors = document.querySelectorAll(`.bundle-variant-select[data-bundle-id="${bundleId}"]`);
+      
+      const items = [];
+      selectors.forEach(select => {
+        items.push({
+          id: select.value, // This gets the Variant ID selected by the user
+          quantity: 1
+        });
+      });
+
+      console.log("Adding items:", items);
+
+      // 2. Add to Cart via AJAX
+      fetch(window.Shopify.routes.root + 'cart/add.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: items })
+      })
+      .then(response => {
+        if(response.ok) {
+           window.location.href = '/cart';
+        } else {
+           alert("Could not add items. Some variants might be out of stock.");
+        }
+      })
+      .catch((error) => {
+        console.error('Error:', error);
+      });
+    }
+  </script>
+{% endif %}
 
 {% schema %}
 {

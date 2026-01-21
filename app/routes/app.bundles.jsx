@@ -4,13 +4,13 @@ import { authenticate } from "../shopify.server";
 import {
   AppProvider,
   Page, Layout, Card, Button, Text, TextField, BlockStack,
-  InlineStack, IndexTable, EmptyState, Badge
+  InlineStack, IndexTable, EmptyState, Badge, Thumbnail
 } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import db from "../db.server";
 
-// 1. LOADER: Get existing bundles
+// 1. LOADER
 export async function loader({ request }) {
   const { session } = await authenticate.admin(request);
   const bundles = await db.bundle.findMany({
@@ -20,7 +20,7 @@ export async function loader({ request }) {
   return { bundles };
 }
 
-// 2. ACTION: Save or Delete Bundle
+// 2. ACTION
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
@@ -28,11 +28,8 @@ export async function action({ request }) {
 
   if (actionType === "delete") {
     await db.bundle.delete({ where: { id: formData.get("id") } });
-    
-    // Update Metafields (Sync deletion)
     const remaining = await db.bundle.findMany({ where: { shop: session.shop } });
     await updateShopMetafield(admin, remaining);
-    
     return { success: true };
   }
 
@@ -40,35 +37,36 @@ export async function action({ request }) {
     const title = formData.get("title");
     const price = formData.get("price");
     const products = JSON.parse(formData.get("products"));
-    // FIX: We now save the ID directly because we mapped it to Variant ID in the UI
-    const productIds = products.map(p => p.id); 
 
+    // SAVE FULL PRODUCT DATA (Handle is critical for Liquid)
+    // we save the list of objects: [{id, handle, title, image}, ...]
     await db.bundle.create({
       data: {
         shop: session.shop,
         title,
         price,
-        productIds: JSON.stringify(productIds)
+        productIds: JSON.stringify(products) 
       }
     });
 
-    // Update Metafields
     const allBundles = await db.bundle.findMany({ where: { shop: session.shop } });
     await updateShopMetafield(admin, allBundles);
-
     return { success: true };
   }
-
   return null;
 }
 
-// Helper: Syncs Bundles to a Shop Metafield
+// Syncs to Shop Metafield so Theme can read handles
 async function updateShopMetafield(admin, bundles) {
   const jsonString = JSON.stringify(bundles.map(b => ({
     id: b.id,
     title: b.title,
     price: b.price,
-    products: JSON.parse(b.productIds)
+    // We parse the stored JSON to get handles
+    products: JSON.parse(b.productIds).map(p => ({
+        handle: p.handle,
+        id: p.id
+    }))
   })));
 
   await admin.graphql(
@@ -103,29 +101,28 @@ export default function BundlePage() {
   const [price, setPrice] = useState("");
 
   const handleSelectProducts = async () => {
-    // FIX: Enable Variant Selection
+    // 1. SELECT PRODUCTS (Not Variants)
     const selection = await shopify.resourcePicker({
       type: "product",
       multiple: true,
-      showVariants: true, // <--- CRITICAL CHANGE: Allows selecting specific variants
+      // showVariants: false is default, which is what we want
     });
 
     if (selection) {
-      // FIX: Map the complicated selection object to a simple list of VARIANTS
-      const variants = selection.flatMap(product => 
-        product.variants.map(variant => ({
-          id: variant.id, // This is the Variant GID (gid://shopify/ProductVariant/123)
-          title: product.title + (variant.title !== 'Default Title' ? ` - ${variant.title}` : ''),
-          price: variant.price
-        }))
-      );
-      setSelectedProducts(variants);
+      // 2. Map only necessary info (Handle is crucial)
+      const products = selection.map(p => ({
+        id: p.id,
+        handle: p.handle,
+        title: p.title,
+        image: p.images?.[0]?.originalSrc || ""
+      }));
+      setSelectedProducts(products);
     }
   };
 
   const handleSave = () => {
-    if (selectedProducts.length < 2) return shopify.toast.show("Select at least 2 items", { isError: true });
-    if (!title) return shopify.toast.show("Enter a bundle title", { isError: true });
+    if (selectedProducts.length < 2) return shopify.toast.show("Select at least 2 products", { isError: true });
+    if (!title) return shopify.toast.show("Enter title", { isError: true });
 
     const data = new FormData();
     data.append("action", "create");
@@ -138,16 +135,14 @@ export default function BundlePage() {
     setTitle("");
     setPrice("");
     setSelectedProducts([]);
-    shopify.toast.show("Bundle Saved!");
+    shopify.toast.show("Bundle Created");
   };
 
   const handleDelete = (id) => {
-    if(true) { 
-       const data = new FormData();
-       data.append("action", "delete");
-       data.append("id", id);
-       submit(data, { method: "POST" });
-    }
+      const data = new FormData();
+      data.append("action", "delete");
+      data.append("id", id);
+      submit(data, { method: "POST" });
   };
 
   return (
@@ -157,19 +152,21 @@ export default function BundlePage() {
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
-                <Text variant="headingMd">Create New Bundle</Text>
-                
-                <TextField label="Bundle Title" value={title} onChange={setTitle} autoComplete="off" placeholder="e.g. Summer Essentials Kit"/>
-                <TextField label="Bundle Price (Optional)" value={price} onChange={setPrice} autoComplete="off" prefix="$" helpText="Leave empty to use sum of product prices"/>
+                <Text variant="headingMd">Create Product Bundle</Text>
+                <TextField label="Bundle Title" value={title} onChange={setTitle} autoComplete="off" placeholder="e.g. Complete Snowboard Kit"/>
+                <TextField label="Bundle Price" value={price} onChange={setPrice} autoComplete="off" prefix="$" helpText="Leave empty to sum product prices"/>
 
-                <Button onClick={handleSelectProducts}>Select Products/Variants</Button>
+                <Button onClick={handleSelectProducts}>Select Products</Button>
                 
                 {selectedProducts.length > 0 && (
                   <BlockStack gap="200">
-                    <Text fontWeight="bold">Selected ({selectedProducts.length}):</Text>
-                    <InlineStack gap="200" wrap>
+                    <Text fontWeight="bold">Selected Items:</Text>
+                    <InlineStack gap="300">
                       {selectedProducts.map(p => (
-                         <Badge key={p.id} tone="info">{p.title}</Badge>
+                         <div key={p.id} style={{display:'flex', alignItems:'center', gap:'5px', border:'1px solid #ddd', padding:'5px', borderRadius:'5px'}}>
+                            {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
+                            <Text>{p.title}</Text>
+                         </div>
                       ))}
                     </InlineStack>
                   </BlockStack>
@@ -185,19 +182,19 @@ export default function BundlePage() {
           <Layout.Section>
             <Card padding="0">
               {bundles.length === 0 ? (
-                 <EmptyState heading="No bundles yet" image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png">
+                 <EmptyState heading="No bundles found" image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png">
                    <p>Create a bundle to display it on your store.</p>
                  </EmptyState>
               ) : (
                 <IndexTable
                   resourceName={{ singular: 'bundle', plural: 'bundles' }}
                   itemCount={bundles.length}
-                  headings={[{ title: 'Title' }, { title: 'Items' }, { title: 'Price' }, { title: 'Action' }]}
+                  headings={[{ title: 'Title' }, { title: 'Products' }, { title: 'Price' }, { title: 'Action' }]}
                 >
                   {bundles.map((bundle, index) => (
                     <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>
                       <IndexTable.Cell><Text fontWeight="bold">{bundle.title}</Text></IndexTable.Cell>
-                      <IndexTable.Cell>{JSON.parse(bundle.productIds).length} items</IndexTable.Cell>
+                      <IndexTable.Cell>{JSON.parse(bundle.productIds).length} Products</IndexTable.Cell>
                       <IndexTable.Cell>{bundle.price ? `$${bundle.price}` : 'Calculated'}</IndexTable.Cell>
                       <IndexTable.Cell>
                         <Button tone="critical" onClick={() => handleDelete(bundle.id)}>Delete</Button>
