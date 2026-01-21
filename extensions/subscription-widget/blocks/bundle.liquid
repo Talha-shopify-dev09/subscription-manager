@@ -1,4 +1,5 @@
 {% assign bundles = shop.metafields.my_app.active_bundles.value %}
+{% assign currency_symbol = cart.currency.symbol %}
 
 {% if bundles != blank %}
   <div class="bundle-container">
@@ -11,6 +12,8 @@
             {% assign prod = all_products[product_info.handle] %}
             
             {% if prod != empty %}
+              {% assign target_price = product_info.bundlePrice | times: 100 %}
+              
               <div class="product-card">
                 <div class="image-wrapper">
                   <img src="{{ prod.featured_image | img_url: '400x' }}" alt="{{ prod.title }}" loading="lazy">
@@ -19,12 +22,21 @@
                 <div class="product-info">
                   <h4 class="product-title">{{ prod.title }}</h4>
                   
+                  <div class="price-comparison">
+                     <span class="original-price">{{ prod.price | money }}</span>
+                     <span class="bundle-price-text">{{ target_price | money }}</span>
+                  </div>
+
                   <div class="variant-selector-wrapper">
                     <label>Select Option:</label>
-                    <select class="bundle-variant-select" data-bundle-id="{{ bundle.id }}">
+                    <select 
+                        class="bundle-variant-select" 
+                        data-bundle-id="{{ bundle.id }}"
+                        data-target-price="{{ product_info.bundlePrice }}" 
+                    >
                       {% for variant in prod.variants %}
-                        <option value="{{ variant.id }}">
-                          {{ variant.title }} - {{ variant.price | money }}
+                        <option value="{{ variant.id }}" data-original-price="{{ variant.price | money_without_currency }}">
+                          {{ variant.title }}
                         </option>
                       {% endfor %}
                     </select>
@@ -37,12 +49,12 @@
 
         <div class="bundle-footer">
           <div class="total-price-box">
-             Bundle Offer: <span class="final-price">${{ bundle.price }}</span>
+             Bundle Total: <span class="final-price">{{ currency_symbol }}{{ bundle.price }}</span>
           </div>
 
           <button 
             class="add-bundle-btn"
-            onclick="addBundleToCart('{{ bundle.id }}', '{{ bundle.discount_code }}')">
+            onclick="addBundleToCart('{{ bundle.id }}', '{{ currency_symbol }}')">
             Add Bundle to Cart
           </button>
         </div>
@@ -54,11 +66,13 @@
     .bundle-container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }
     .bundle-wrapper { border: 1px solid #e5e5e5; border-radius: 12px; padding: 30px; margin-bottom: 40px; }
     .bundle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-    .product-card { border: 1px solid #eee; border-radius: 8px; overflow: hidden; }
+    .product-card { border: 1px solid #eee; border-radius: 8px; overflow: hidden; text-align: center; }
     .image-wrapper { height: 200px; background: #f9f9f9; display: flex; align-items: center; justify-content: center; }
     .image-wrapper img { max-height: 100%; max-width: 100%; object-fit: contain; }
     .product-info { padding: 15px; }
-    .variant-selector-wrapper label { display: block; font-size: 0.8rem; margin-bottom: 5px; color: #444; }
+    .price-comparison { margin-bottom: 10px; font-size: 1rem; }
+    .original-price { text-decoration: line-through; color: #999; margin-right: 8px; }
+    .bundle-price-text { color: #d32f2f; font-weight: bold; }
     .bundle-variant-select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white; }
     .bundle-footer { text-align: center; border-top: 1px solid #eee; padding-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 15px; }
     .final-price { font-weight: bold; color: #2c6ecb; font-size: 1.5rem; }
@@ -67,22 +81,33 @@
   </style>
 
   <script>
-    function addBundleToCart(bundleId, discountCode) {
-      // 1. Get Selected Variants from Dropdowns
+    function addBundleToCart(bundleId, currencySymbol) {
       const selectors = document.querySelectorAll(`.bundle-variant-select[data-bundle-id="${bundleId}"]`);
       const items = [];
       
       selectors.forEach(select => {
+        // 1. Calculate Saving for this specific item
+        const targetPrice = parseFloat(select.getAttribute('data-target-price'));
+        const originalPrice = parseFloat(select.options[select.selectedIndex].getAttribute('data-original-price').replace(/,/g, ''));
+        
+        let savedAmount = 0;
+        if(originalPrice > targetPrice) {
+            savedAmount = (originalPrice - targetPrice).toFixed(2);
+        }
+
+        // 2. Prepare Line Item with Properties
         items.push({
           id: select.value,
           quantity: 1,
-          properties: { "_bundle_id": bundleId } 
+          properties: { 
+             "_bundle_id": bundleId,
+             "Saved": `${currencySymbol}${savedAmount}` // <--- THIS SHOWS IN CART
+          } 
         });
       });
 
-      console.log("Adding items with discount:", discountCode);
+      console.log("Adding items:", items);
 
-      // 2. Add to Cart
       fetch(window.Shopify.routes.root + 'cart/add.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -90,15 +115,9 @@
       })
       .then(response => {
         if(response.ok) {
-           // 3. Redirect to Checkout with Discount Code
-           // This ensures the price is exactly what we promised
-           if(discountCode && discountCode !== "undefined") {
-             window.location.href = `/checkout?discount=${discountCode}`;
-           } else {
-             window.location.href = '/cart';
-           }
+           window.location.href = '/cart';
         } else {
-           alert("Could not add items. Check if variant is in stock.");
+           alert("Stock Error: Some items unavailable.");
         }
       })
       .catch((error) => {

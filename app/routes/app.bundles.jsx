@@ -10,12 +10,19 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import db from "../db.server";
 
 export async function loader({ request }) {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
+  
+  // 1. Fetch Store Currency
+  const shopResponse = await admin.graphql(`{ shop { currencyFormats { active { symbol } } } }`);
+  const shopJson = await shopResponse.json();
+  const currencySymbol = shopJson.data?.shop?.currencyFormats?.active?.symbol || "$";
+
   const bundles = await db.bundle.findMany({
     where: { shop: session.shop },
     orderBy: { createdAt: 'desc' }
   });
-  return { bundles };
+
+  return { bundles, currencySymbol };
 }
 
 export async function action({ request }) {
@@ -35,7 +42,6 @@ export async function action({ request }) {
         const title = formData.get("title");
         const products = JSON.parse(formData.get("products")); 
         
-        // 1. Calculate Totals & Prep IDs
         let totalOriginal = 0;
         let totalBundle = 0;
         const productIds = [];
@@ -48,54 +54,39 @@ export async function action({ request }) {
 
         const discountValue = totalOriginal - totalBundle;
 
-        // 2. TAGGING: Add "Bundle-Item" tag to selected products
-        // This helps you identify them in Admin and meets your requirement
+        // 2. TAGGING: Add "Bundle-Item" tag
         for (const pid of productIds) {
             await admin.graphql(
                 `#graphql
                 mutation addTags($id: ID!, $tags: [String!]!) {
                     tagsAdd(id: $id, tags: $tags) {
                         node { id }
-                        userErrors { message }
                     }
                 }`,
-                {
-                    variables: {
-                        id: pid,
-                        tags: ["Bundle-Item"] // <--- The Tag you asked for
-                    }
-                }
+                { variables: { id: pid, tags: ["Bundle-Item"] } }
             );
         }
 
-        // 3. Create AUTOMATIC Discount (Applies to these products)
+        // 3. Create AUTOMATIC Discount
         if (discountValue > 0) {
-            const response = await admin.graphql(
+            await admin.graphql(
                 `#graphql
                 mutation discountAutomaticBasicCreate($automaticBasicDiscount: DiscountAutomaticBasicInput!) {
                   discountAutomaticBasicCreate(automaticBasicDiscount: $automaticBasicDiscount) {
-                    automaticDiscountNode {
-                      automaticDiscount {
-                        ... on DiscountAutomaticBasic { title startsAt }
-                      }
-                    }
                     userErrors { field message }
                   }
                 }`,
                 {
                   variables: {
                     automaticBasicDiscount: {
-                      title: `${title} (Save $${discountValue.toFixed(0)})`,
+                      title: `${title} (Save ${discountValue.toFixed(0)})`,
                       startsAt: new Date().toISOString(),
                       minimumRequirement: {
-                        // Discount only applies if they buy ALL items in the bundle
                         quantity: { greaterThanOrEqualToQuantity: products.length.toString() }
                       },
                       customerGets: {
                         value: { discountAmount: { amount: discountValue.toFixed(2), appliesOnEachItem: false } },
-                        items: {
-                          products: { productsToAdd: productIds } // Applies to the tagged products
-                        }
+                        items: { products: { productsToAdd: productIds } }
                       }
                     }
                   }
@@ -103,7 +94,7 @@ export async function action({ request }) {
             );
         }
 
-        // 4. Save Bundle Data
+        // 4. Save Bundle
         await db.bundle.create({
             data: {
                 shop: session.shop,
@@ -125,7 +116,6 @@ export async function action({ request }) {
   return null;
 }
 
-// (Helper and UI Component remain the same as previous step, pasting for completeness)
 async function updateShopMetafield(admin, bundles) {
   const jsonString = JSON.stringify(bundles.map(b => ({
     id: b.id,
@@ -156,7 +146,7 @@ async function updateShopMetafield(admin, bundles) {
 }
 
 export default function BundlePage() {
-  const { bundles } = useLoaderData();
+  const { bundles, currencySymbol } = useLoaderData();
   const actionData = useActionData();
   const submit = useSubmit();
   const shopify = useAppBridge();
@@ -209,7 +199,7 @@ export default function BundlePage() {
       <Page title="Fixed Bundles">
         <BlockStack gap="400">
             {actionData?.error && <Banner tone="critical" title="Error">{actionData.error}</Banner>}
-            {actionData?.success && <Banner tone="success" title="Success">Bundle Saved! Products Tagged.</Banner>}
+            {actionData?.success && <Banner tone="success" title="Success">Bundle Saved!</Banner>}
 
             <Layout>
             <Layout.Section>
@@ -225,12 +215,12 @@ export default function BundlePage() {
                             <InlineStack key={p.productId} align="space-between" blockAlign="center">
                                 <InlineStack gap="200" blockAlign="center">
                                     {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
-                                    <BlockStack><Text fontWeight="bold">{p.title}</Text><Text tone="subdued">Original: ${p.originalPrice}</Text></BlockStack>
+                                    <BlockStack><Text fontWeight="bold">{p.title}</Text><Text tone="subdued">Original: {currencySymbol}{p.originalPrice}</Text></BlockStack>
                                 </InlineStack>
-                                <div style={{width: '150px'}}><TextField type="number" label="Bundle Price" labelHidden value={p.bundlePrice} onChange={(val) => updateProductPrice(index, val)} prefix="$"/></div>
+                                <div style={{width: '150px'}}><TextField type="number" label="Bundle Price" labelHidden value={p.bundlePrice} onChange={(val) => updateProductPrice(index, val)} prefix={currencySymbol}/></div>
                             </InlineStack>
                         ))}
-                         <Banner tone="info">Total: <b>${selectedProducts.reduce((a,b)=>a+parseFloat(b.bundlePrice),0).toFixed(2)}</b></Banner>
+                         <Banner tone="info">Total: <b>{currencySymbol}{selectedProducts.reduce((a,b)=>a+parseFloat(b.bundlePrice),0).toFixed(2)}</b></Banner>
                     </BlockStack>
                     )}
                     <InlineStack align="end"><Button variant="primary" onClick={handleSave}>Save Bundle</Button></InlineStack>
@@ -243,7 +233,7 @@ export default function BundlePage() {
                     {bundles.map((bundle, index) => (
                         <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>
                         <IndexTable.Cell><Text fontWeight="bold">{bundle.title}</Text></IndexTable.Cell>
-                        <IndexTable.Cell>${bundle.price}</IndexTable.Cell>
+                        <IndexTable.Cell>{currencySymbol}{bundle.price}</IndexTable.Cell>
                         <IndexTable.Cell><Button tone="critical" onClick={() => handleDelete(bundle.id)}>Delete</Button></IndexTable.Cell>
                         </IndexTable.Row>
                     ))}
