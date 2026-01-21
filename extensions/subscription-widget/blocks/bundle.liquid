@@ -1,6 +1,7 @@
 {% assign bundles = shop.metafields.my_app.active_bundles.value %}
 
 {% if bundles != blank %}
+diagram for Adding Special Variants to Cart
   <div class="bundle-container">
     {% for bundle in bundles %}
       <div class="bundle-wrapper">
@@ -18,18 +19,24 @@
                 
                 <div class="product-info">
                   <h4 class="product-title">{{ prod.title }}</h4>
-                  <p class="product-price">{{ prod.price | money }}</p>
                   
-                  <div class="variant-selector-wrapper">
-                    <label>Select Option:</label>
-                    <select class="bundle-variant-select" data-bundle-id="{{ bundle.id }}">
-                      {% for variant in prod.variants %}
-                        <option value="{{ variant.id }}">
-                          {{ variant.title }}
-                        </option>
-                      {% endfor %}
-                    </select>
-                  </div>
+                  {% comment %} 
+                    Logic: Find the Special Variant that matches the ID saved in our App 
+                  {% endcomment %}
+                  {% assign special_variant = prod.variants | where: "id", product_info.id | first %}
+                  
+                  {% if special_variant %}
+                     <p class="product-price">
+                       <span style="text-decoration: line-through; color: #999;">{{ prod.price | money }}</span>
+                       <span style="color: #d32f2f; font-weight: bold; margin-left: 5px;">{{ special_variant.price | money }}</span>
+                     </p>
+                     
+                     <input type="hidden" class="bundle-item-id" data-bundle-id="{{ bundle.id }}" value="{{ special_variant.id }}">
+                  
+                  {% else %}
+                     <p style="color:red">Error: Variant not found. Re-save bundle.</p>
+                  {% endif %}
+
                 </div>
               </div>
             {% endif %}
@@ -38,13 +45,13 @@
 
         <div class="bundle-footer">
           <div class="total-price-box">
-             Bundle Price: <span class="final-price">${{ bundle.price }}</span>
+             Bundle Total: <span class="final-price">${{ bundle.price }}</span>
           </div>
 
           <button 
             class="add-bundle-btn"
-            onclick="addBundleToCart('{{ bundle.id }}', '{{ bundle.discount_code }}')">
-            Add Bundle to Cart
+            onclick="addBundleToCart('{{ bundle.id }}')">
+            Add to Cart
           </button>
         </div>
       </div>
@@ -52,38 +59,37 @@
   </div>
 
   <style>
-    /* Same CSS as before... */
+    /* Same CSS as before */
     .bundle-container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }
     .bundle-wrapper { border: 1px solid #e5e5e5; border-radius: 12px; padding: 30px; margin-bottom: 40px; }
-    .bundle-title { text-align: center; margin-bottom: 30px; font-size: 2rem; }
     .bundle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
     .product-card { border: 1px solid #eee; border-radius: 8px; overflow: hidden; }
     .image-wrapper { height: 200px; background: #f9f9f9; display: flex; align-items: center; justify-content: center; }
     .image-wrapper img { max-height: 100%; max-width: 100%; object-fit: contain; }
-    .product-info { padding: 15px; }
+    .product-info { padding: 15px; text-align: center; }
     .bundle-footer { text-align: center; border-top: 1px solid #eee; padding-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 15px; }
     .final-price { font-weight: bold; color: #2c6ecb; font-size: 1.5rem; }
     .add-bundle-btn { background: #000; color: #fff; border: none; padding: 12px 40px; font-size: 1rem; border-radius: 50px; cursor: pointer; }
     .add-bundle-btn:hover { background: #333; }
-    .bundle-variant-select { width: 100%; padding: 8px; margin-top:5px; }
   </style>
 
   <script>
-    function addBundleToCart(bundleId, discountCode) {
-      const selectors = document.querySelectorAll(`.bundle-variant-select[data-bundle-id="${bundleId}"]`);
+    function addBundleToCart(bundleId) {
+      // 1. Get the Special Variant IDs we prepared in HTML
+      const inputs = document.querySelectorAll(`.bundle-item-id[data-bundle-id="${bundleId}"]`);
       const items = [];
       
-      selectors.forEach(select => {
+      inputs.forEach(input => {
         items.push({
-          id: select.value,
+          id: input.value,
           quantity: 1,
-           properties: { "_bundle_id": bundleId } // Links items in cart
+          properties: { "_bundle_id": bundleId, "Promo": "Bundle Deal" } 
         });
       });
 
-      console.log("Adding items with discount:", discountCode);
+      console.log("Adding variants:", items);
 
-      // 1. Add Items to Cart
+      // 2. Standard Add to Cart
       fetch(window.Shopify.routes.root + 'cart/add.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -91,17 +97,11 @@
       })
       .then(response => {
         if(response.ok) {
-           // 2. APPLY DISCOUNT AUTOMATICALLY
-           if(discountCode && discountCode !== "undefined") {
-             // We can apply discount via a fetch to this endpoint, 
-             // or simply redirect to checkout with the code attached.
-             // Redirecting is 100% reliable.
-             window.location.href = `/checkout?discount=${discountCode}`;
-           } else {
-             window.location.href = '/cart';
-           }
+           // 3. Go to Cart (NOT Checkout)
+           // The prices will be correct because we added the cheap variants!
+           window.location.href = '/cart';
         } else {
-           alert("Could not add items. Check stock.");
+           alert("Stock Error: Could not add items.");
         }
       })
       .catch((error) => {
