@@ -1,4 +1,4 @@
-{% schema %}
+{% schema %} 
 {
   "name": "Subscription Options",
   "target": "section",
@@ -15,11 +15,9 @@
 
 <style>
   /* =========================
-     Styling only, functionality unchanged
-     Target: layout like reference image
+     Styling only (with a tiny UI fix in JS below)
   ========================= */
 
-  /* Wrapper */
   .sw-wrapper {
     border: none;
     max-width: 100%;
@@ -27,7 +25,6 @@
     margin: 24px 0;
   }
 
-  /* Header */
   .sw-header {
     background: transparent;
     border: none;
@@ -37,7 +34,6 @@
     color: #111;
   }
 
-  /* Option card */
   .sw-option-row {
     display: flex;
     align-items: center;
@@ -50,18 +46,14 @@
     cursor: pointer;
   }
 
-  .sw-option-row:hover {
-    background: #fff;
-  }
+  .sw-option-row:hover { background: #fff; }
 
-  /* Radio container */
   .sw-radio-container {
     margin: 0;
     display: flex;
     align-items: center;
   }
 
-  /* Radio */
   .sw-radio-container input[type="radio"] {
     width: 18px;
     height: 18px;
@@ -69,14 +61,12 @@
     cursor: pointer;
   }
 
-  /* Info layout */
   .sw-info {
     flex: 1;
     display: flex;
     flex-direction: column;
   }
 
-  /* Top row: label left, price right */
   .sw-top-line {
     display: flex;
     align-items: center;
@@ -85,7 +75,6 @@
     width: 100%;
   }
 
-  /* Label */
   .sw-label-text {
     font-size: 15px;
     font-weight: 500;
@@ -96,7 +85,6 @@
     flex-wrap: wrap;
   }
 
-  /* Price */
   .sw-price-text {
     font-size: 15px;
     font-weight: 500;
@@ -104,14 +92,12 @@
     white-space: nowrap;
   }
 
-  /* Strikethrough original price */
   .sw-price-text del {
     color: #888;
     font-weight: 400;
     margin-left: 8px;
   }
 
-  /* SAVE badge */
   .sw-badge {
     background: #111;
     color: #fff;
@@ -123,12 +109,11 @@
     letter-spacing: 0.2px;
   }
 
-  /* Plan selector */
   .sw-plan-selector {
     margin-top: 14px;
     padding-top: 14px;
     border-top: 1px solid #e5e5e5;
-    display: none; /* keep same behavior (JS toggles) */
+    display: none;
   }
 
   .sw-select {
@@ -140,7 +125,6 @@
     background: #fff;
   }
 
-  /* Footer */
   .sw-footer {
     padding: 0;
     background: transparent;
@@ -148,10 +132,9 @@
     margin-top: 16px;
   }
 
-  /* Button */
   .sw-btn {
     width: 100%;
-    background-color: {{ section.settings.accent_color }};
+    background-color: {{ block.settings.accent_color }};
     color: #fff;
     padding: 14px;
     border: none;
@@ -161,11 +144,8 @@
     font-size: 15px;
   }
 
-  .sw-btn:hover {
-    opacity: 0.92;
-  }
+  .sw-btn:hover { opacity: 0.92; }
 
-  /* Error */
   .sw-error {
     color: #ef4444;
     font-size: 13px;
@@ -174,7 +154,6 @@
     display: none;
   }
 
-  /* Optional: highlight selected option (CSS-only) */
   .sw-option-row:has(input[type="radio"]:checked) {
     outline: 2px solid #111;
     outline-offset: 0;
@@ -186,7 +165,7 @@
   const container = document.getElementById('subscription-widget-{{ product.id }}');
   const productId = '{{ product.id }}';
   const variantId = {{ product.selected_or_first_available_variant.id }};
-  const productPrice = {{ product.price }}; 
+  const productPrice = {{ product.price }};
   const currencySymbol = '{{ cart.currency.symbol }}';
 
   function formatMoney(cents) { return currencySymbol + (cents / 100).toFixed(2); }
@@ -203,13 +182,21 @@
 
     if (plans.length === 0) { container.style.display = 'none'; return; }
 
+    /* ✅ FIX: compute the default subscription price BEFORE rendering,
+       so the subscribe row never shows the full price initially. */
+    const firstPlanDiscount = parseFloat((plans[0] && plans[0].discount) || 0);
+    const firstPlanPrice = productPrice * (1 - firstPlanDiscount / 100);
+
     let html = `
-      <div class="sw-header">{{ section.settings.heading }}</div>
+      <div class="sw-header">{{ block.settings.heading }}</div>
       
       <label class="sw-option-row" onclick="selectOption('onetime')">
         <div class="sw-radio-container"><input type="radio" name="purchase_option" value="onetime" checked></div>
         <div class="sw-info">
-          <div class="sw-top-line"><span class="sw-label-text">One-time purchase</span><span class="sw-price-text">${formatMoney(productPrice)}</span></div>
+          <div class="sw-top-line">
+            <span class="sw-label-text">One-time purchase</span>
+            <span class="sw-price-text">${formatMoney(productPrice)}</span>
+          </div>
         </div>
       </label>
 
@@ -217,80 +204,110 @@
         <div class="sw-radio-container"><input type="radio" name="purchase_option" value="subscription"></div>
         <div class="sw-info">
           <div class="sw-top-line">
-            <span class="sw-label-text">Subscribe & Save <span class="sw-badge">Save <span id="max-save-display">10</span>%</span></span>
-            <span class="sw-price-text" id="sub-price-display">${formatMoney(productPrice)}</span>
+            <span class="sw-label-text">
+              Subscribe & Save
+              <span class="sw-badge">Save <span id="max-save-display">10</span>%</span>
+            </span>
+            <span class="sw-price-text" id="sub-price-display">${formatMoney(firstPlanPrice)}</span>
           </div>
           <div class="sw-plan-selector" id="plan-selector-box">
-             <select class="sw-select" id="selling-plan-dropdown" onchange="updateUI()">
+            <select class="sw-select" id="selling-plan-dropdown" onchange="updateUI()">
     `;
 
     plans.forEach((plan, index) => {
-        const key = (index + 1).toString();
-        const rawId = shopifyIds[key];
-        const cleanId = rawId ? rawId.split('/').pop() : '';
-        const discount = parseFloat(plan.discount || 0);
-        const price = (productPrice * (1 - discount/100));
-        html += `<option value="${cleanId}" data-discount="${discount}" data-price="${price}">Every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s) - Save ${discount}%</option>`;
+      const key = (index + 1).toString();
+      const rawId = shopifyIds[key];
+      const cleanId = rawId ? rawId.split('/').pop() : '';
+      const discount = parseFloat(plan.discount || 0);
+      const price = (productPrice * (1 - discount/100));
+      html += `<option value="${cleanId}" data-discount="${discount}" data-price="${price}">Every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s) - Save ${discount}%</option>`;
     });
 
     html += `</select></div></div></label>
-      <div class="sw-footer"><button id="btn-add-to-cart" class="sw-btn" onclick="addToCart()">Add to Cart</button><p id="sw-error-msg" class="sw-error"></p></div>
+      <div class="sw-footer">
+        <button id="btn-add-to-cart" class="sw-btn" onclick="addToCart()">Add to Cart</button>
+        <p id="sw-error-msg" class="sw-error"></p>
+      </div>
     `;
 
     container.innerHTML = html;
 
-    let currentMode = 'onetime'; 
+    let currentMode = 'onetime';
     let currentPlanId = '';
 
     window.selectOption = function(type) {
-        currentMode = type;
-        const dropdown = document.getElementById('plan-selector-box');
-        const radioOne = container.querySelector('input[value="onetime"]');
-        const radioSub = container.querySelector('input[value="subscription"]');
+      currentMode = type;
+      const dropdown = document.getElementById('plan-selector-box');
+      const radioOne = container.querySelector('input[value="onetime"]');
+      const radioSub = container.querySelector('input[value="subscription"]');
 
-        if (type === 'onetime') {
-            dropdown.style.display = 'none';
-            radioOne.checked = true;
-            currentPlanId = '';
-        } else {
-            dropdown.style.display = 'block';
-            radioSub.checked = true;
-            updateUI(); 
-        }
+      if (type === 'onetime') {
+        dropdown.style.display = 'none';
+        radioOne.checked = true;
+        currentPlanId = '';
+      } else {
+        dropdown.style.display = 'block';
+        radioSub.checked = true;
+        updateUI();
+      }
     };
 
     window.updateUI = function() {
-        const dropdownSelect = document.getElementById('selling-plan-dropdown');
-        currentPlanId = dropdownSelect.value;
-        const selectedOption = dropdownSelect.options[dropdownSelect.selectedIndex];
-        document.getElementById('sub-price-display').innerText = formatMoney(parseFloat(selectedOption.getAttribute('data-price')));
-        document.getElementById('max-save-display').innerText = selectedOption.getAttribute('data-discount');
+      const dropdownSelect = document.getElementById('selling-plan-dropdown');
+      currentPlanId = dropdownSelect.value;
+      const selectedOption = dropdownSelect.options[dropdownSelect.selectedIndex];
+      document.getElementById('sub-price-display').innerText =
+        formatMoney(parseFloat(selectedOption.getAttribute('data-price')));
+      document.getElementById('max-save-display').innerText =
+        selectedOption.getAttribute('data-discount');
     };
 
     window.addToCart = async function() {
-        const btn = document.getElementById('btn-add-to-cart');
-        const errorMsg = document.getElementById('sw-error-msg');
-        errorMsg.style.display = 'none';
-        btn.innerText = "Adding...";
+      const btn = document.getElementById('btn-add-to-cart');
+      const errorMsg = document.getElementById('sw-error-msg');
+      errorMsg.style.display = 'none';
+      btn.innerText = "Adding...";
 
-        const payload = { id: variantId, quantity: 1 };
-        if (currentMode === 'subscription' && currentPlanId) payload.selling_plan = currentPlanId;
+      const payload = { id: variantId, quantity: 1 };
+      if (currentMode === 'subscription' && currentPlanId) payload.selling_plan = currentPlanId;
 
-        try {
-            const response = await fetch('/cart/add.js', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ items: [payload] }) });
-            if (response.ok) window.location.href = '/cart';
-            else {
-                btn.innerText = "Add to Cart";
-                errorMsg.innerText = "Error adding to cart.";
-                errorMsg.style.display = 'block';
-            }
-        } catch (err) { console.error(err); btn.innerText = "Add to Cart"; }
+      try {
+        const response = await fetch('/cart/add.js', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ items: [payload] })
+        });
+        if (response.ok) window.location.href = '/cart';
+        else {
+          btn.innerText = "Add to Cart";
+          errorMsg.innerText = "Error adding to cart.";
+          errorMsg.style.display = 'block';
+        }
+      } catch (err) {
+        console.error(err);
+        btn.innerText = "Add to Cart";
+      }
     };
-    
+
     // Set max discount badge
     const maxDiscount = Math.max(...plans.map(p => parseFloat(p.discount || 0)));
     document.getElementById('max-save-display').innerText = maxDiscount;
 
-  } catch (err) { console.error(err); container.style.display = 'none'; }
+    /* ✅ Keep dropdown aligned with the displayed default price:
+       ensure the first plan is the active selection (usually already true). */
+    const dropdownSelect = document.getElementById('selling-plan-dropdown');
+    if (dropdownSelect && dropdownSelect.options.length) {
+      dropdownSelect.selectedIndex = 0;
+      const firstOpt = dropdownSelect.options[0];
+      document.getElementById('sub-price-display').innerText =
+        formatMoney(parseFloat(firstOpt.getAttribute('data-price')));
+      document.getElementById('max-save-display').innerText =
+        firstOpt.getAttribute('data-discount');
+    }
+
+  } catch (err) {
+    console.error(err);
+    container.style.display = 'none';
+  }
 })();
 </script>
