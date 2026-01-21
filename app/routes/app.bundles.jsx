@@ -34,65 +34,81 @@ export async function action({ request }) {
     if (actionType === "create") {
         const title = formData.get("title");
         const products = JSON.parse(formData.get("products")); 
-
-        // 1. Calculate Totals
+        
+        // 1. Calculate Totals & Prep IDs
         let totalOriginal = 0;
-        let totalBundlePrice = 0;
+        let totalBundle = 0;
+        const productIds = [];
 
         products.forEach(p => {
             totalOriginal += parseFloat(p.originalPrice || 0);
-            totalBundlePrice += parseFloat(p.bundlePrice || 0);
+            totalBundle += parseFloat(p.bundlePrice || 0);
+            productIds.push(p.productId); 
         });
 
-        const discountAmount = totalOriginal - totalBundlePrice;
-        let generatedCode = null;
+        const discountValue = totalOriginal - totalBundle;
 
-        // 2. Create Automatic Discount Code
-        if (discountAmount > 0) {
-            const code = `BUNDLE-${Date.now()}`; // Unique Code
-            
+        // 2. TAGGING: Add "Bundle-Item" tag to selected products
+        // This helps you identify them in Admin and meets your requirement
+        for (const pid of productIds) {
+            await admin.graphql(
+                `#graphql
+                mutation addTags($id: ID!, $tags: [String!]!) {
+                    tagsAdd(id: $id, tags: $tags) {
+                        node { id }
+                        userErrors { message }
+                    }
+                }`,
+                {
+                    variables: {
+                        id: pid,
+                        tags: ["Bundle-Item"] // <--- The Tag you asked for
+                    }
+                }
+            );
+        }
+
+        // 3. Create AUTOMATIC Discount (Applies to these products)
+        if (discountValue > 0) {
             const response = await admin.graphql(
                 `#graphql
-                mutation discountCodeBasicCreate($basicCodeDiscount: DiscountCodeBasicInput!) {
-                  discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
-                    codeDiscountNode {
-                      codeDiscount {
-                        ... on DiscountCodeBasic { codes(first: 1) { nodes { code } } }
+                mutation discountAutomaticBasicCreate($automaticBasicDiscount: DiscountAutomaticBasicInput!) {
+                  discountAutomaticBasicCreate(automaticBasicDiscount: $automaticBasicDiscount) {
+                    automaticDiscountNode {
+                      automaticDiscount {
+                        ... on DiscountAutomaticBasic { title startsAt }
                       }
                     }
+                    userErrors { field message }
                   }
                 }`,
                 {
                   variables: {
-                    basicCodeDiscount: {
-                      title: `Bundle: ${title}`,
-                      code: code,
+                    automaticBasicDiscount: {
+                      title: `${title} (Save $${discountValue.toFixed(0)})`,
                       startsAt: new Date().toISOString(),
-                      customerSelection: { all: true },
+                      minimumRequirement: {
+                        // Discount only applies if they buy ALL items in the bundle
+                        quantity: { greaterThanOrEqualToQuantity: products.length.toString() }
+                      },
                       customerGets: {
-                        value: { discountAmount: { amount: discountAmount.toFixed(2), appliesOnEachItem: false } },
-                        items: { all: true }
+                        value: { discountAmount: { amount: discountValue.toFixed(2), appliesOnEachItem: false } },
+                        items: {
+                          products: { productsToAdd: productIds } // Applies to the tagged products
+                        }
                       }
                     }
                   }
                 }
             );
-            
-            const responseJson = await response.json();
-            if(responseJson.data?.discountCodeBasicCreate?.codeDiscountNode) {
-                generatedCode = code;
-            }
         }
 
-        // 3. Save Bundle
+        // 4. Save Bundle Data
         await db.bundle.create({
             data: {
                 shop: session.shop,
                 title,
-                price: totalBundlePrice.toFixed(2),
-                discountCode: generatedCode,
-                // We save just the Handle/ID. We DON'T save specific variant IDs here, 
-                // so the frontend can choose ANY variant.
+                price: totalBundle.toFixed(2),
                 productIds: JSON.stringify(products) 
             }
         });
@@ -104,17 +120,17 @@ export async function action({ request }) {
     }
   } catch (error) {
       console.error("SERVER ERROR:", error);
-      return { error: "System Error: " + error.message };
+      return { error: error.message };
   }
   return null;
 }
 
+// (Helper and UI Component remain the same as previous step, pasting for completeness)
 async function updateShopMetafield(admin, bundles) {
   const jsonString = JSON.stringify(bundles.map(b => ({
     id: b.id,
     title: b.title,
     price: b.price,
-    discount_code: b.discountCode,
     products: JSON.parse(b.productIds) 
   })));
 
@@ -149,15 +165,11 @@ export default function BundlePage() {
   const [title, setTitle] = useState("");
 
   const handleSelectProducts = async () => {
-    const selection = await shopify.resourcePicker({
-      type: "product", // Select Whole Product
-      multiple: true,
-    });
-
+    const selection = await shopify.resourcePicker({ type: "product", multiple: true });
     if (selection) {
       const products = selection.map(p => ({
-        id: p.id,
-        handle: p.handle, // Critical for Liquid
+        productId: p.id,
+        handle: p.handle,
         title: p.title,
         image: p.images?.[0]?.originalSrc || "",
         originalPrice: p.variants?.[0]?.price || "0",
@@ -176,13 +188,11 @@ export default function BundlePage() {
   const handleSave = () => {
     if (selectedProducts.length < 2) return shopify.toast.show("Select 2+ products", { isError: true });
     if (!title) return shopify.toast.show("Enter title", { isError: true });
-
     const data = new FormData();
     data.append("action", "create");
     data.append("title", title);
     data.append("products", JSON.stringify(selectedProducts)); 
     submit(data, { method: "POST" });
-    
     setTitle("");
     setSelectedProducts([]);
   };
@@ -199,7 +209,7 @@ export default function BundlePage() {
       <Page title="Fixed Bundles">
         <BlockStack gap="400">
             {actionData?.error && <Banner tone="critical" title="Error">{actionData.error}</Banner>}
-            {actionData?.success && <Banner tone="success" title="Success">Bundle Saved!</Banner>}
+            {actionData?.success && <Banner tone="success" title="Success">Bundle Saved! Products Tagged.</Banner>}
 
             <Layout>
             <Layout.Section>
@@ -208,33 +218,19 @@ export default function BundlePage() {
                     <Text variant="headingMd">Create Bundle</Text>
                     <TextField label="Bundle Title" value={title} onChange={setTitle} autoComplete="off"/>
                     <Button onClick={handleSelectProducts}>Select Products</Button>
-                    
                     {selectedProducts.length > 0 && (
                     <BlockStack gap="400">
                         <Text fontWeight="bold">Set Price Per Item:</Text>
                         {selectedProducts.map((p, index) => (
-                            <InlineStack key={p.id} align="space-between" blockAlign="center">
+                            <InlineStack key={p.productId} align="space-between" blockAlign="center">
                                 <InlineStack gap="200" blockAlign="center">
                                     {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
-                                    <BlockStack>
-                                        <Text fontWeight="bold">{p.title}</Text>
-                                        <Text tone="subdued">Original: ${p.originalPrice}</Text>
-                                    </BlockStack>
+                                    <BlockStack><Text fontWeight="bold">{p.title}</Text><Text tone="subdued">Original: ${p.originalPrice}</Text></BlockStack>
                                 </InlineStack>
-                                <div style={{width: '150px'}}>
-                                    <TextField 
-                                        type="number" 
-                                        label="Price" labelHidden 
-                                        value={p.bundlePrice} 
-                                        onChange={(val) => updateProductPrice(index, val)}
-                                        prefix="$"
-                                    />
-                                </div>
+                                <div style={{width: '150px'}}><TextField type="number" label="Bundle Price" labelHidden value={p.bundlePrice} onChange={(val) => updateProductPrice(index, val)} prefix="$"/></div>
                             </InlineStack>
                         ))}
-                        <Banner tone="info">
-                            Bundle Total: <b>${selectedProducts.reduce((a,b)=>a+parseFloat(b.bundlePrice),0).toFixed(2)}</b>
-                        </Banner>
+                         <Banner tone="info">Total: <b>${selectedProducts.reduce((a,b)=>a+parseFloat(b.bundlePrice),0).toFixed(2)}</b></Banner>
                     </BlockStack>
                     )}
                     <InlineStack align="end"><Button variant="primary" onClick={handleSave}>Save Bundle</Button></InlineStack>
@@ -243,11 +239,7 @@ export default function BundlePage() {
             </Layout.Section>
             <Layout.Section>
                 <Card padding="0">
-                    <IndexTable
-                    resourceName={{ singular: 'bundle', plural: 'bundles' }}
-                    itemCount={bundles.length}
-                    headings={[{ title: 'Title' }, { title: 'Total Price' }, { title: 'Action' }]}
-                    >
+                    <IndexTable resourceName={{ singular: 'bundle', plural: 'bundles' }} itemCount={bundles.length} headings={[{ title: 'Title' }, { title: 'Price' }, { title: 'Action' }]}>
                     {bundles.map((bundle, index) => (
                         <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>
                         <IndexTable.Cell><Text fontWeight="bold">{bundle.title}</Text></IndexTable.Cell>
