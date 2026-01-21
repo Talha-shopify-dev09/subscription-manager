@@ -12,16 +12,14 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import { TitleBar } from "@shopify/app-bridge-react";
 import db from "../db.server"; 
 
-// --- LOADER: Fetch Data (SECURED) ---
+// --- LOADER ---
 export async function loader({ request }) {
-  // 1. Get the Session to identify the shop
   const { admin, session } = await authenticate.admin(request);
 
-  // Fetch Products & Collections
   const response = await admin.graphql(
     `#graphql
       query {
-        products(first: 50) {
+        products(first: 20) {
           edges {
             node {
               id
@@ -30,7 +28,7 @@ export async function loader({ request }) {
             }
           }
         }
-        collections(first: 50) {
+        collections(first: 20) {
           edges {
             node {
               id
@@ -57,20 +55,16 @@ export async function loader({ request }) {
     productsCount: edge.node.productsCount.count
   }));
   
-  // 2. FILTER SUBSCRIPTIONS BY SHOP
   const subscriptions = await db.subscription.findMany({
-    where: {
-      shop: session.shop, // <--- Only fetch for the current store
-    },
+    where: { shop: session.shop },
     orderBy: { createdAt: 'desc' }
   });
   
   return { subscriptions, products, collections };
 }
 
-// --- ACTION: Handle Save/Delete ---
+// --- ACTION ---
 export async function action({ request }) {
-  // FIX: Destructure session here to get the shop name
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const actionType = formData.get("action");
@@ -94,18 +88,7 @@ export async function action({ request }) {
     return Response.json({ success: true });
   }
 
-  // 2. TOGGLE
-  if (actionType === "toggle") {
-    const id = formData.get("id");
-    const sub = await db.subscription.findUnique({ where: { id } });
-    await db.subscription.update({
-      where: { id },
-      data: { enabled: !sub.enabled }
-    });
-    return Response.json({ success: true });
-  }
-
-  // 3. CREATE (With Max Cycles Logic)
+  // 2. CREATE
   if (actionType === "create") {
     const type = formData.get("type");
     const targetId = formData.get("targetId");
@@ -113,10 +96,7 @@ export async function action({ request }) {
     const originalPrice = formData.get("originalPrice");
     const plans = JSON.parse(formData.get("plans") || "[]");
 
-    // Construct Shopify Plans
     const sellingPlansToCreate = plans.map((plan, index) => {
-      
-      // Basic Billing Policy
       const billingPolicy = {
         recurring: { 
           interval: plan.interval, 
@@ -124,17 +104,12 @@ export async function action({ request }) {
         }
       };
 
-      // Max Cycles Logic
       if (plan.maxCycles && parseInt(plan.maxCycles) > 0) {
         billingPolicy.recurring.maxCycles = parseInt(plan.maxCycles);
       }
 
-      // Generate Name
       let planName = `Deliver every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s)`;
-      
-      if(plan.maxCycles && parseInt(plan.maxCycles) > 0) {
-        planName += ` (Ends after ${plan.maxCycles} payments)`;
-      }
+      if(plan.maxCycles) planName += ` (Max ${plan.maxCycles})`;
       planName += ` - Save ${plan.discount}%`;
 
       return {
@@ -157,7 +132,7 @@ export async function action({ request }) {
       };
     });
 
-    // Create Group in Shopify
+    // Create Group
     const response = await admin.graphql(
       `#graphql
       mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!) {
@@ -196,7 +171,7 @@ export async function action({ request }) {
 
     const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
 
-    // Attach Product/Collection
+    // --- ATTACH LOGIC ---
     if (type === "product") {
       await admin.graphql(
         `#graphql
@@ -206,22 +181,41 @@ export async function action({ request }) {
         { variables: { id: targetId, sellingPlanGroupIds: [newGroup.id] } }
       );
     } else if (type === "collection") {
-       const collectionQuery = await admin.graphql(
-        `#graphql
-        query getCollectionProducts($id: ID!) {
-          collection(id: $id) { products(first: 50) { edges { node { id } } } }
-        }`,
-        { variables: { id: targetId } }
-      );
-      const cData = await collectionQuery.json();
-      const pIds = cData.data.collection?.products?.edges.map(e => e.node.id) || [];
-      if(pIds.length > 0) {
+      
+      // FIX: Loop to get ALL products in collection (Pagination)
+      let allProductIds = [];
+      let hasNextPage = true;
+      let endCursor = null;
+
+      while (hasNextPage) {
+        const query = `#graphql
+          query getCollectionProducts($id: ID!, $cursor: String) {
+            collection(id: $id) {
+              products(first: 250, after: $cursor) {
+                pageInfo { hasNextPage endCursor }
+                edges { node { id } }
+              }
+            }
+          }`;
+
+        const cResponse = await admin.graphql(query, { variables: { id: targetId, cursor: endCursor } });
+        const cData = await cResponse.json();
+        
+        const edges = cData.data.collection?.products?.edges || [];
+        allProductIds.push(...edges.map(e => e.node.id));
+
+        hasNextPage = cData.data.collection?.products?.pageInfo?.hasNextPage;
+        endCursor = cData.data.collection?.products?.pageInfo?.endCursor;
+      }
+
+      // Attach in batches if needed (Shopify limits array size, usually 250 is safe)
+      if(allProductIds.length > 0) {
         await admin.graphql(
           `#graphql
           mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
             sellingPlanGroupAddProducts(id: $id, productIds: $productIds) { sellingPlanGroup { id } }
           }`,
-          { variables: { id: newGroup.id, productIds: pIds } }
+          { variables: { id: newGroup.id, productIds: allProductIds } }
         );
       }
     }
@@ -241,7 +235,7 @@ export async function action({ request }) {
     // Save to DB
     await db.subscription.create({
       data: {
-        shop: session.shop, // <--- FIX: Added shop here
+        shop: session.shop,
         type, 
         targetId, 
         targetTitle, 
@@ -264,13 +258,9 @@ export default function Subscriptions() {
   
   const [showModal, setShowModal] = useState(false);
   const [subscriptionType, setSubscriptionType] = useState("product");
-  
-  // PLANS STATE: Added "maxCycles" (default: "" which means infinite)
-  const [plans, setPlans] = useState([
-    { interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }
-  ]);
-
+  const [plans, setPlans] = useState([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
   const [formData, setFormData] = useState({ targetId: "", targetTitle: "", originalPrice: "" });
+
   const isLoading = ["loading", "submitting"].includes(fetcher.state);
 
   const addPlan = () => setPlans([...plans, { interval: "MONTH", intervalCount: 1, discount: 0, maxCycles: "" }]);
@@ -303,7 +293,7 @@ export default function Subscriptions() {
   }, [collections]);
 
   const handleSave = useCallback(() => {
-    if (!formData.targetId) return shopify.toast.show("Please select a product", { isError: true });
+    if (!formData.targetId) return shopify.toast.show("Please select a target", { isError: true });
     const data = new FormData();
     data.append("action", "create");
     data.append("type", subscriptionType);
@@ -339,7 +329,7 @@ export default function Subscriptions() {
                   <p>Create your first plan.</p>
                 </EmptyState>
               ) : (
-                <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={subscriptions.length} headings={[{ title: 'Product' }, { title: 'Plans' }, { title: 'Action' }]}>
+                <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={subscriptions.length} headings={[{ title: 'Target' }, { title: 'Plans' }, { title: 'Action' }]}>
                   {subscriptions.map((sub, index) => {
                     let plansDisplay = [];
                     try { plansDisplay = JSON.parse(sub.plansData || '[]'); } catch(e){}
@@ -351,7 +341,6 @@ export default function Subscriptions() {
                             {plansDisplay.map((p, i) => (
                               <Badge key={i} tone="info">
                                 Every {p.intervalCount} {p.interval.toLowerCase()} 
-                                {p.maxCycles ? ` (Max ${p.maxCycles})` : ' (Infinite)'}
                               </Badge>
                             ))}
                           </InlineStack>
@@ -382,10 +371,8 @@ export default function Subscriptions() {
               ) : (
                 <Select label="Select Collection" options={collectionOptions} value={formData.targetId} onChange={handleCollectionSelect} />
               )}
-              
               <Divider />
               <InlineStack align="space-between"><Text variant="headingSm">Intervals</Text><Button icon={PlusIcon} onClick={addPlan}>Add</Button></InlineStack>
-              
               <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
               <BlockStack gap="400">
               {plans.map((plan, index) => (
@@ -397,21 +384,7 @@ export default function Subscriptions() {
                       <div style={{flex:1.5}}><Select label="Unit" options={intervalOptions} value={plan.interval} onChange={(v)=>updatePlan(index, 'interval', v)} /></div>
                       <div style={{flex:1}}><TextField label="Discount %" type="number" value={plan.discount} onChange={(v)=>updatePlan(index, 'discount', v)} suffix="%" autoComplete="off"/></div>
                     </InlineStack>
-                    
-                    {/* NEW FIELD: MAX CYCLES */}
-                    <InlineStack gap="200" align="center">
-                        <div style={{flex: 1}}>
-                          <TextField 
-                            label="Max Charges (Optional)" 
-                            type="number" 
-                            value={plan.maxCycles} 
-                            onChange={(v) => updatePlan(index, 'maxCycles', v)}
-                            helpText="Leave blank for 'Until Cancelled' (Infinite)"
-                            placeholder="∞"
-                            autoComplete="off"
-                          />
-                        </div>
-                    </InlineStack>
+                    <TextField label="Max Charges (Optional)" type="number" value={plan.maxCycles} onChange={(v) => updatePlan(index, 'maxCycles', v)} placeholder="∞" autoComplete="off" />
                   </BlockStack>
                 </Box>
               ))}
