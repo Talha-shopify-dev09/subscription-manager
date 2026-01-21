@@ -2,8 +2,19 @@ import { useState } from "react";
 import { useLoaderData, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
-  AppProvider, Page, Layout, Card, Button, Text, TextField, BlockStack,
-  InlineStack, IndexTable, EmptyState, Thumbnail
+  AppProvider, 
+  Page, 
+  Layout, 
+  Card, 
+  Button, 
+  Text, 
+  TextField, 
+  BlockStack,
+  InlineStack, 
+  IndexTable, 
+  EmptyState, 
+  Thumbnail, 
+  Badge // <--- ADDED THIS IMPORT
 } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -19,19 +30,14 @@ export async function loader({ request }) {
   return { bundles };
 }
 
-// 2. ACTION: Now Creates Discount Automatically!
+// 2. ACTION: Creates Discount Automatically!
 export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const actionType = formData.get("action");
 
   if (actionType === "delete") {
-    // 1. Find Bundle to get Discount ID
     const bundle = await db.bundle.findUnique({ where: { id: formData.get("id") } });
-    if(bundle?.discountCode) {
-        // Optional: Delete the discount from Shopify to keep things clean
-        // (Requires saving Discount GID, skipping for simplicity)
-    }
     await db.bundle.delete({ where: { id: formData.get("id") } });
     
     // Sync Metafields
@@ -43,14 +49,11 @@ export async function action({ request }) {
   if (actionType === "create") {
     const title = formData.get("title");
     const priceStr = formData.get("price");
-    const products = JSON.parse(formData.get("products")); // [{id, price, ...}]
+    const products = JSON.parse(formData.get("products")); 
 
-    // A. Calculate Discount Needed
-    // We assume the admin picker provided 'price' in the object. 
-    // If not, we'd need to fetch it. The ResourcePicker usually provides 'variants'.
+    // A. Calculate Discount
     let totalOriginalPrice = 0.0;
     products.forEach(p => {
-        // ResourcePicker provides price as string "10.00"
         totalOriginalPrice += parseFloat(p.price || "0");
     });
 
@@ -89,12 +92,7 @@ export async function action({ request }) {
                   customerSelection: { all: true },
                   customerGets: {
                     value: { discountAmount: { amount: discountAmount.toFixed(2), appliesOnEachItem: false } },
-                    items: {
-                        // Apply only to selected products to prevent abuse? 
-                        // For simplicity, we apply to "All Items" but since it's a fixed amount,
-                        // it effectively reduces the cart total.
-                        all: true 
-                    }
+                    items: { all: true }
                   }
                 }
               }
@@ -115,7 +113,7 @@ export async function action({ request }) {
         shop: session.shop,
         title,
         price: priceStr,
-        discountCode: generatedCode, // <--- Store the code!
+        discountCode: generatedCode, 
         productIds: JSON.stringify(products) 
       }
     });
@@ -133,7 +131,7 @@ async function updateShopMetafield(admin, bundles) {
     id: b.id,
     title: b.title,
     price: b.price,
-    discount_code: b.discountCode, // <--- Send code to Theme
+    discount_code: b.discountCode, 
     products: JSON.parse(b.productIds).map(p => ({
         handle: p.handle,
         id: p.id
@@ -161,7 +159,7 @@ async function updateShopMetafield(admin, bundles) {
   );
 }
 
-// 3. UI COMPONENT (Modified for Variants)
+// 3. UI COMPONENT
 export default function BundlePage() {
   const { bundles } = useLoaderData();
   const submit = useSubmit();
@@ -175,18 +173,15 @@ export default function BundlePage() {
     const selection = await shopify.resourcePicker({
       type: "product",
       multiple: true,
-      // We need Products (Handles), not just variants, for the Liquid loop
     });
 
     if (selection) {
-      // We assume the 1st variant price for estimation, 
-      // but in Liquid we'll check real prices.
       const products = selection.map(p => ({
         id: p.id,
         handle: p.handle,
         title: p.title,
         image: p.images?.[0]?.originalSrc || "",
-        price: p.variants?.[0]?.price || "0" // Capture price for calc
+        price: p.variants?.[0]?.price || "0" 
       }));
       setSelectedProducts(products);
     }
