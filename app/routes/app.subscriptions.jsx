@@ -49,38 +49,65 @@ export async function action({ request }) {
   const formData = await request.formData();
   const actionType = formData.get("action");
   
-  // 1. FETCH COLLECTION PRODUCTS (NEW ACTION)
+  // 1. FETCH COLLECTION PRODUCTS (WITH PAGINATION SUPPORT)
   if (actionType === "fetchCollectionProducts") {
     const collectionId = formData.get("collectionId");
     
     try {
-      const response = await admin.graphql(
-        `#graphql
-        query getCollectionProducts($id: ID!) {
-          collection(id: $id) {
-            products(first: 250) {
-              edges {
-                node {
-                  id
-                  title
-                  images(first: 1) { nodes { originalSrc } }
+      let allProducts = [];
+      let hasNextPage = true;
+      let cursor = null;
+      
+      // Fetch ALL products from collection (paginated)
+      while (hasNextPage) {
+        const response = await admin.graphql(
+          `#graphql
+          query getCollectionProducts($id: ID!, $cursor: String) {
+            collection(id: $id) {
+              products(first: 250, after: $cursor) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+                edges {
+                  node {
+                    id
+                    title
+                    images(first: 1) { nodes { originalSrc } }
+                  }
                 }
               }
             }
-          }
-        }`,
-        { variables: { id: collectionId } }
-      );
+          }`,
+          { variables: { id: collectionId, cursor } }
+        );
+        
+        const json = await response.json();
+        const productsData = json.data?.collection?.products;
+        
+        if (productsData) {
+          const products = productsData.edges.map(e => ({
+            id: e.node.id,
+            title: e.node.title,
+            image: e.node.images.nodes[0]?.originalSrc
+          }));
+          
+          allProducts = [...allProducts, ...products];
+          hasNextPage = productsData.pageInfo.hasNextPage;
+          cursor = productsData.pageInfo.endCursor;
+        } else {
+          hasNextPage = false;
+        }
+      }
       
-      const json = await response.json();
-      const products = json.data?.collection?.products?.edges.map(e => ({
-          id: e.node.id,
-          title: e.node.title,
-          image: e.node.images.nodes[0]?.originalSrc
-      })) || [];
+      console.log(`✅ Fetched ${allProducts.length} products from collection`);
       
-      return Response.json({ collectionProducts: products });
+      return Response.json({ 
+        collectionProducts: allProducts,
+        totalCount: allProducts.length 
+      });
     } catch (error) {
+      console.error("❌ Failed to fetch collection products:", error);
       return Response.json({ error: "Failed to fetch collection products" }, { status: 500 });
     }
   }
@@ -102,13 +129,16 @@ export async function action({ request }) {
     return Response.json({ success: true });
   }
 
-  // 3. CREATE
+  // 3. CREATE SUBSCRIPTION
   if (actionType === "create") {
     const type = formData.get("type");
     const targetTitle = formData.get("targetTitle");
     const originalPrice = formData.get("originalPrice");
     const plans = JSON.parse(formData.get("plans") || "[]");
     const targetIds = JSON.parse(formData.get("targetIds") || "[]");
+
+    console.log(`🔵 Starting subscription creation for ${targetIds.length} products`);
+    console.log(`🔵 Product IDs:`, targetIds);
 
     // Validate
     if (targetIds.length === 0) {
@@ -141,12 +171,31 @@ export async function action({ request }) {
       };
     });
 
-    // Create Group
+    // Create Selling Plan Group
+    console.log(`🔵 Creating selling plan group...`);
     const response = await admin.graphql(
       `#graphql
-      mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!) {
-        sellingPlanGroupCreate(input: $input) {
-          sellingPlanGroup { id sellingPlans(first: 10) { edges { node { id billingPolicy { ... on SellingPlanRecurringBillingPolicy { interval intervalCount } } } } } }
+      mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!, $resources: SellingPlanGroupResourceInput) {
+        sellingPlanGroupCreate(input: $input, resources: $resources) {
+          sellingPlanGroup { 
+            id 
+            name
+            productCount
+            sellingPlans(first: 10) { 
+              edges { 
+                node { 
+                  id 
+                  name
+                  billingPolicy { 
+                    ... on SellingPlanRecurringBillingPolicy { 
+                      interval 
+                      intervalCount 
+                    } 
+                  } 
+                } 
+              } 
+            } 
+          }
           userErrors { field message }
         }
       }`,
@@ -156,39 +205,71 @@ export async function action({ request }) {
             name: `Subscription: ${targetTitle}`,
             merchantCode: `sub-${Date.now()}`,
             options: ["Delivery Interval"],
-            position: 1,
             sellingPlansToCreate
+          },
+          resources: {
+            productIds: targetIds  // ⭐ CRITICAL: Attach products during creation
           }
         }
       }
     );
 
     const responseJson = await response.json();
-    if (responseJson.data.sellingPlanGroupCreate.userErrors.length > 0) {
-      return Response.json({ error: responseJson.data.sellingPlanGroupCreate.userErrors }, { status: 400 });
+    console.log(`🔵 Selling plan group response:`, JSON.stringify(responseJson, null, 2));
+    
+    if (responseJson.data?.sellingPlanGroupCreate?.userErrors?.length > 0) {
+      console.error("❌ User errors:", responseJson.data.sellingPlanGroupCreate.userErrors);
+      return Response.json({ 
+        error: responseJson.data.sellingPlanGroupCreate.userErrors 
+      }, { status: 400 });
     }
 
     const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
+    console.log(`✅ Created selling plan group: ${newGroup.id}`);
+    console.log(`✅ Product count in group: ${newGroup.productCount}`);
 
-    // --- ATTACH PRODUCTS ---
-    if (targetIds.length > 0) {
-         const attachResponse = await admin.graphql(
-           `#graphql
-           mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
-             sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
-               sellingPlanGroup { id }
-               userErrors { field message }
-             }
-           }`,
-           { variables: { id: newGroup.id, productIds: targetIds } }
-         );
-         
-         const attachJson = await attachResponse.json();
-         if (attachJson.data.sellingPlanGroupAddProducts.userErrors.length > 0) {
-           return Response.json({ 
-             error: attachJson.data.sellingPlanGroupAddProducts.userErrors 
-           }, { status: 400 });
-         }
+    // BACKUP METHOD: If productCount is 0 or less than expected, add products explicitly
+    if (!newGroup.productCount || newGroup.productCount < targetIds.length) {
+      console.log(`⚠️ Product count mismatch. Attempting to add products explicitly...`);
+      
+      // Add products in batches
+      const batchSize = 100;
+      let successCount = 0;
+      
+      for (let i = 0; i < targetIds.length; i += batchSize) {
+        const batch = targetIds.slice(i, i + batchSize);
+        console.log(`🔵 Adding batch ${Math.floor(i/batchSize) + 1}: ${batch.length} products`);
+        
+        try {
+          const attachResponse = await admin.graphql(
+            `#graphql
+            mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
+              sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
+                sellingPlanGroup { 
+                  id 
+                  productCount
+                }
+                userErrors { field message }
+              }
+            }`,
+            { variables: { id: newGroup.id, productIds: batch } }
+          );
+          
+          const attachJson = await attachResponse.json();
+          console.log(`🔵 Batch response:`, JSON.stringify(attachJson, null, 2));
+          
+          if (attachJson.data?.sellingPlanGroupAddProducts?.userErrors?.length > 0) {
+            console.error(`❌ Errors in batch:`, attachJson.data.sellingPlanGroupAddProducts.userErrors);
+          } else {
+            successCount += batch.length;
+            console.log(`✅ Successfully added batch. Total products in group: ${attachJson.data.sellingPlanGroupAddProducts.sellingPlanGroup.productCount}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error adding batch:`, error);
+        }
+      }
+      
+      console.log(`✅ Finished adding products. Success count: ${successCount}`);
     }
 
     // Save to DB
@@ -207,7 +288,7 @@ export async function action({ request }) {
       data: {
         shop: session.shop,
         type, 
-        targetId: targetIds[0], 
+        targetId: type === 'collection' ? formData.get("collectionId") : targetIds[0],
         targetTitle, 
         originalPrice: originalPrice || "0",
         plansData: JSON.stringify(plans),
@@ -216,14 +297,22 @@ export async function action({ request }) {
         enabled: true
       }
     });
+    
+    console.log(`✅ Subscription saved to database`);
+    
+    return Response.json({ 
+      success: true, 
+      productsAttached: newGroup.productCount || targetIds.length 
+    });
   }
+  
   return Response.json({ success: true });
 }
 
 export default function Subscriptions() {
   const { subscriptions, products, collections } = useLoaderData();
-  const fetcher = useFetcher(); // For saving subscriptions and deleting
-  const collectionFetcher = useFetcher(); // For fetching collection products
+  const fetcher = useFetcher();
+  const collectionFetcher = useFetcher();
   const shopify = useAppBridge();
   
   const [showModal, setShowModal] = useState(false);
@@ -231,6 +320,7 @@ export default function Subscriptions() {
   const [plans, setPlans] = useState([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
   
   // UI State
+  const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [selectedTitle, setSelectedTitle] = useState("");
   const [selectedPrice, setSelectedPrice] = useState("");
   const [targetIds, setTargetIds] = useState([]);
@@ -240,7 +330,7 @@ export default function Subscriptions() {
   const isLoadingCollection = ["loading", "submitting"].includes(collectionFetcher.state);
 
   // --- HANDLERS ---
-  const addPlan = () => setPlans([...plans, { interval: "MONTH", intervalCount: 1, discount: 0, maxCycles: "" }]);
+  const addPlan = () => setPlans([...plans, { interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
   const removePlan = (index) => { const n = [...plans]; n.splice(index, 1); setPlans(n); };
   const updatePlan = (index, field, value) => { const n = [...plans]; n[index][field] = value; setPlans(n); };
 
@@ -252,6 +342,7 @@ export default function Subscriptions() {
     setPreviewProducts([]); 
     setSelectedTitle(""); 
     setSelectedPrice("");
+    setSelectedCollectionId("");
   }, []);
 
   // 1. Single Product Selected
@@ -265,16 +356,16 @@ export default function Subscriptions() {
     }
   }, [products]);
 
-  // 2. Collection Selected - FIXED: Use fetcher.submit instead of load
+  // 2. Collection Selected
   const handleCollectionSelect = useCallback((value) => {
     const collection = collections.find(c => c.id === value);
     if (collection) {
+        setSelectedCollectionId(collection.id);
         setSelectedTitle(collection.title);
         setSelectedPrice("N/A");
-        setPreviewProducts([]); // Clear previous
-        setTargetIds([]); // Clear previous
+        setPreviewProducts([]);
+        setTargetIds([]);
         
-        // Use submit with POST to avoid navigation
         const formData = new FormData();
         formData.append("action", "fetchCollectionProducts");
         formData.append("collectionId", collection.id);
@@ -282,16 +373,21 @@ export default function Subscriptions() {
     }
   }, [collections, collectionFetcher]);
 
-  // 3. Listen for Collection Fetch Results - FIXED: Check for the right data
+  // 3. Listen for Collection Fetch Results
   useEffect(() => {
       if (collectionFetcher.data?.collectionProducts) {
           const prods = collectionFetcher.data.collectionProducts;
+          console.log(`Frontend received ${prods.length} products`);
           setPreviewProducts(prods);
           const ids = prods.map(p => p.id);
+          console.log(`Setting targetIds:`, ids);
           setTargetIds(ids);
+          
+          if (collectionFetcher.data.totalCount) {
+              shopify.toast.show(`Loaded ${collectionFetcher.data.totalCount} products from collection`);
+          }
       }
       
-      // Handle errors
       if (collectionFetcher.data?.error) {
           shopify.toast.show(collectionFetcher.data.error, { isError: true });
       }
@@ -311,6 +407,8 @@ export default function Subscriptions() {
       return shopify.toast.show("Discount must be between 0 and 100%", { isError: true });
     }
     
+    console.log(`Submitting subscription with ${targetIds.length} products:`, targetIds);
+    
     const data = new FormData();
     data.append("action", "create");
     data.append("type", subscriptionType);
@@ -318,25 +416,37 @@ export default function Subscriptions() {
     data.append("originalPrice", selectedPrice);
     data.append("targetIds", JSON.stringify(targetIds));
     data.append("plans", JSON.stringify(plans));
+    if (subscriptionType === 'collection') {
+      data.append("collectionId", selectedCollectionId);
+    }
     
     fetcher.submit(data, { method: "post" });
-  }, [targetIds, subscriptionType, selectedTitle, selectedPrice, plans, fetcher, shopify]);
+  }, [targetIds, subscriptionType, selectedTitle, selectedPrice, plans, fetcher, shopify, selectedCollectionId]);
 
   // Handle successful save
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success) {
-      shopify.toast.show(`Subscription applied to ${targetIds.length} product(s)!`);
+      const count = fetcher.data.productsAttached || targetIds.length;
+      shopify.toast.show(`✅ Subscription applied to ${count} product(s)!`, { duration: 5000 });
       handleCancel();
     }
     
     if (fetcher.state === "idle" && fetcher.data?.error) {
-      shopify.toast.show("Failed to create subscription", { isError: true });
+      const errorMsg = Array.isArray(fetcher.data.error) 
+        ? fetcher.data.error.map(e => e.message).join(", ")
+        : "Failed to create subscription";
+      shopify.toast.show(errorMsg, { isError: true });
     }
   }, [fetcher.state, fetcher.data, handleCancel, shopify, targetIds.length]);
 
   const productOptions = [{ label: 'Select product', value: '' }, ...products.map(p => ({ label: `${p.title}`, value: p.id }))];
   const collectionOptions = [{ label: 'Select collection', value: '' }, ...collections.map(c => ({ label: c.title, value: c.id }))];
-  const intervalOptions = [{ label: "Day(s)", value: "DAY" }, { label: "Week(s)", value: "WEEK" }, { label: "Month(s)", value: "MONTH" }, { label: "Year(s)", value: "YEAR" }];
+  const intervalOptions = [
+    { label: "Day(s)", value: "DAY" }, 
+    { label: "Week(s)", value: "WEEK" }, 
+    { label: "Month(s)", value: "MONTH" }, 
+    { label: "Year(s)", value: "YEAR" }
+  ];
 
   return (
     <AppProvider i18n={enTranslations}>
@@ -349,17 +459,22 @@ export default function Subscriptions() {
             <Card padding="0">
               {subscriptions.length === 0 ? (
                 <EmptyState 
-                  heading="No subscriptions" 
+                  heading="No subscriptions yet" 
                   action={{ content: 'Create Subscription', onAction: () => setShowModal(true) }} 
                   image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                 >
-                  <p>Create your first subscription plan.</p>
+                  <p>Create your first subscription plan for products or collections.</p>
                 </EmptyState>
               ) : (
                 <IndexTable 
                   resourceName={{ singular: 'subscription', plural: 'subscriptions' }} 
                   itemCount={subscriptions.length} 
-                  headings={[{ title: 'Target' }, { title: 'Type' }, { title: 'Plans' }, { title: 'Action' }]}
+                  headings={[
+                    { title: 'Target' }, 
+                    { title: 'Type' }, 
+                    { title: 'Plans' }, 
+                    { title: 'Action' }
+                  ]}
                   selectable={false}
                 >
                   {subscriptions.map((sub, index) => {
@@ -368,26 +483,31 @@ export default function Subscriptions() {
                     return (
                       <IndexTable.Row id={sub.id} key={sub.id} position={index}>
                         <IndexTable.Cell>
-                          <Text fontWeight="bold">{sub.targetTitle}</Text>
+                          <BlockStack gap="100">
+                            <Text fontWeight="bold">{sub.targetTitle}</Text>
+                            <Text variant="bodySm" tone="subdued">{sub.type}</Text>
+                          </BlockStack>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Badge>{sub.type}</Badge>
+                          <Badge tone={sub.type === 'collection' ? 'info' : 'success'}>
+                            {sub.type}
+                          </Badge>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          <InlineStack gap="100" wrap>
+                          <BlockStack gap="100">
                             {plansDisplay.map((p, i) => (
-                              <Badge key={i} tone="info">
+                              <Text key={i} variant="bodySm">
                                 Every {p.intervalCount} {p.interval.toLowerCase()}(s) - {p.discount}% off
-                              </Badge>
+                              </Text>
                             ))}
-                          </InlineStack>
+                          </BlockStack>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           <Button 
                             size="slim" 
                             tone="critical" 
                             onClick={() => { 
-                              if(confirm("Delete this subscription?")) { 
+                              if(confirm(`Delete subscription for "${sub.targetTitle}"?`)) { 
                                 const d = new FormData(); 
                                 d.append("action", "delete"); 
                                 d.append("id", sub.id); 
@@ -413,7 +533,7 @@ export default function Subscriptions() {
           onClose={handleCancel} 
           title="Create Subscription Plan" 
           primaryAction={{ 
-            content: 'Save Subscription', 
+            content: targetIds.length > 0 ? `Apply to ${targetIds.length} product(s)` : 'Save Subscription', 
             onAction: handleSave, 
             loading: isLoading,
             disabled: targetIds.length === 0 || isLoadingCollection
@@ -438,6 +558,7 @@ export default function Subscriptions() {
                   setPreviewProducts([]); 
                   setSelectedTitle("");
                   setSelectedPrice("");
+                  setSelectedCollectionId("");
                 }} 
               />
               
@@ -461,26 +582,35 @@ export default function Subscriptions() {
                 <Box padding="400">
                   <InlineStack align="center" gap="200">
                     <Spinner size="small" />
-                    <Text>Loading products from collection...</Text>
+                    <Text>Loading all products from collection...</Text>
                   </InlineStack>
                 </Box>
               )}
               
-              {/* PREVIEW OF TARGETS */}
+              {/* PREVIEW OF SELECTED PRODUCTS */}
               {previewProducts.length > 0 && !isLoadingCollection && (
                   <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                       <BlockStack gap="300">
-                        <Text variant="headingSm" fontWeight="bold">
-                          Selected: {previewProducts.length} product(s)
-                        </Text>
+                        <InlineStack align="space-between">
+                          <Text variant="headingSm" fontWeight="bold">
+                            {previewProducts.length} product(s) will receive subscription
+                          </Text>
+                          <Badge tone="success">Ready</Badge>
+                        </InlineStack>
+                        <Divider />
                         <div style={{maxHeight: '200px', overflowY: 'auto'}}>
                             <BlockStack gap="200">
-                                {previewProducts.map(p => (
+                                {previewProducts.slice(0, 10).map(p => (
                                     <InlineStack key={p.id} align="start" gap="200" blockAlign="center">
                                         {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
                                         <Text variant="bodySm">{p.title}</Text>
                                     </InlineStack>
                                 ))}
+                                {previewProducts.length > 10 && (
+                                  <Text variant="bodySm" tone="subdued" fontWeight="semibold">
+                                    + {previewProducts.length - 10} more products...
+                                  </Text>
+                                )}
                             </BlockStack>
                         </div>
                       </BlockStack>
@@ -549,7 +679,7 @@ export default function Subscriptions() {
                           onChange={(v) => updatePlan(index, 'maxCycles', v)} 
                           placeholder="Unlimited" 
                           autoComplete="off"
-                          helpText="Leave empty for unlimited billing"
+                          helpText="Leave empty for unlimited recurring billing"
                         />
                       </BlockStack>
                     </Box>
