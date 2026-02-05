@@ -40,7 +40,6 @@ export async function loader({ request }) {
     orderBy: { createdAt: 'desc' }
   });
   
-  // Use native Response.json
   return Response.json({ subscriptions, products, collections });
 }
 
@@ -115,7 +114,6 @@ export async function action({ request }) {
   }
 
   if (actionType === "create") {
-    // UpperCase to match Prisma Enum PRODUCT/COLLECTION
     const type = formData.get("type").toUpperCase(); 
     const targetTitle = formData.get("targetTitle");
     const originalPrice = formData.get("originalPrice");
@@ -188,9 +186,9 @@ export async function action({ request }) {
           targetId: formData.get("collectionId") || targetIds[0],
           targetTitle, 
           originalPrice: originalPrice || "0",
-          plansData: plans, // Direct object for Json type
+          plansData: plans,
           shopifyGroupId: newGroup.id,
-          shopifyPlanIds: shopifyPlanIdsMap, // Direct object for Json type
+          shopifyPlanIds: shopifyPlanIdsMap,
           enabled: true
         }
       });
@@ -287,77 +285,78 @@ export default function Subscriptions() {
   }, [fetcher.state, fetcher.data, handleCancel, shopify]);
 
   return (
-    <Page>
-      <TitleBar title="Socoba Subscriptions">
-        <button variant="primary" onClick={() => setShowModal(true)}>Create Plan</button>
-      </TitleBar>
-      <Layout>
-        <Layout.Section>
-          <Card padding="0">
-            {subscriptions.length === 0 ? (
-              <EmptyState heading="No subscriptions" action={{ content: 'Create Subscription', onAction: () => setShowModal(true) }} image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png" />
-            ) : (
-              <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={subscriptions.length} headings={[{ title: 'Target' }, { title: 'Plans' }, { title: 'Action' }]}>
-                {subscriptions.map((sub, index) => (
-                  <IndexTable.Row id={sub.id} key={sub.id} position={index}>
-                    <IndexTable.Cell><Text fontWeight="bold">{sub.targetTitle}</Text></IndexTable.Cell>
-                    <IndexTable.Cell>
-                      <InlineStack gap="100" wrap>
-                        {/* plansData is now an object, no JSON.parse needed */}
-                        {sub.plansData.map((p, i) => <Badge key={i} tone="info">Every {p.intervalCount} {p.interval.toLowerCase()}</Badge>)}
-                      </InlineStack>
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>
-                      <Button size="slim" tone="critical" onClick={() => { if(confirm("Delete?")) { const d = new FormData(); d.append("action", "delete"); d.append("id", sub.id); d.append("shopifyGroupId", sub.shopifyGroupId); fetcher.submit(d, { method: "post" }); }}}>Delete</Button>
-                    </IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
-            )}
-          </Card>
-        </Layout.Section>
-      </Layout>
-      <Modal open={showModal} onClose={handleCancel} title="Create Subscription Plan" primaryAction={{ content: 'Save', onAction: handleSave, loading: isLoading }}>
-        <Modal.Section>
-          <FormLayout>
-            <Select label="Type" options={[{ label: 'Product', value: 'product' }, { label: 'Collection', value: 'collection' }]} value={subscriptionType} onChange={(v) => { setSubscriptionType(v); setTargetIds([]); setPreviewProducts([]); }} />
-            {subscriptionType === 'product' ? <Select label="Select Product" options={[{ label: 'Select product', value: '' }, ...products.map(p => ({ label: p.title, value: p.id }))]} onChange={handleProductSelect} /> : <Select label="Select Collection" options={[{ label: 'Select collection', value: '' }, ...collections.map(c => ({ label: c.title, value: c.id }))]} onChange={handleCollectionSelect} />}
-            {isLoadingCollection && <Box padding="400"><InlineStack align="center" gap="200"><Spinner size="small" /><Text>Loading products...</Text></InlineStack></Box>}
-            {previewProducts.length > 0 && !isLoadingCollection && (
-              <Box background="bg-surface-secondary" padding="300" borderRadius="200">
-                <Text variant="bodyMd" fontWeight="bold">Applying to {previewProducts.length} products:</Text>
-                <div style={{maxHeight: '150px', overflowY: 'auto', marginTop: '10px'}}>
-                  <BlockStack gap="200">
-                    {previewProducts.slice(0, 50).map(p => (
-                      <InlineStack key={p.id} align="start" gap="200">
-                        {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
-                        <Text variant="bodySm">{p.title}</Text>
-                      </InlineStack>
-                    ))}
-                  </BlockStack>
-                </div>
-              </Box>
-            )}
-            <Divider />
-            <InlineStack align="space-between"><Text variant="headingSm">Intervals</Text><Button icon={PlusIcon} onClick={addPlan}>Add</Button></InlineStack>
-            <BlockStack gap="400">
-              {plans.map((plan, index) => (
-                <Box key={index} background="bg-surface-secondary" padding="400" borderRadius="200">
-                  <BlockStack gap="300">
-                    <InlineStack align="space-between"><Text fontWeight="bold">Plan #{index+1}</Text><Button icon={DeleteIcon} tone="critical" variant="plain" onClick={() => removePlan(index)} /></InlineStack>
-                    <InlineStack gap="200">
-                      <div style={{flex:1}}><TextField label="Every" type="number" value={plan.intervalCount} onChange={(v)=>updatePlan(index, 'intervalCount', v)} autoComplete="off"/></div>
-                      <div style={{flex:1.5}}><Select label="Unit" options={[{ label: "Day(s)", value: "DAY" }, { label: "Week(s)", value: "WEEK" }, { label: "Month(s)", value: "MONTH" }, { label: "Year(s)", value: "YEAR" }]} value={plan.interval} onChange={(v)=>updatePlan(index, 'interval', v)} /></div>
-                      <div style={{flex:1}}><TextField label="Discount %" type="number" value={plan.discount} onChange={(v)=>updatePlan(index, 'discount', v)} suffix="%" autoComplete="off"/></div>
-                    </InlineStack>
-                    <TextField label="Max Charges (Optional)" type="number" value={plan.maxCycles} onChange={(v) => updatePlan(index, 'maxCycles', v)} placeholder="∞" autoComplete="off" />
-                  </BlockStack>
+    <AppProvider i18n={enTranslations}>
+      <Page>
+        <TitleBar title="Socoba Subscriptions">
+          <button variant="primary" onClick={() => setShowModal(true)}>Create Plan</button>
+        </TitleBar>
+        <Layout>
+          <Layout.Section>
+            <Card padding="0">
+              {subscriptions.length === 0 ? (
+                <EmptyState heading="No subscriptions" action={{ content: 'Create Subscription', onAction: () => setShowModal(true) }} image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png" />
+              ) : (
+                <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={subscriptions.length} headings={[{ title: 'Target' }, { title: 'Plans' }, { title: 'Action' }]}>
+                  {subscriptions.map((sub, index) => (
+                    <IndexTable.Row id={sub.id} key={sub.id} position={index}>
+                      <IndexTable.Cell><Text fontWeight="bold">{sub.targetTitle}</Text></IndexTable.Cell>
+                      <IndexTable.Cell>
+                        <InlineStack gap="100" wrap>
+                          {sub.plansData.map((p, i) => <Badge key={i} tone="info">Every {p.intervalCount} {p.interval.toLowerCase()}</Badge>)}
+                        </InlineStack>
+                      </IndexTable.Cell>
+                      <IndexTable.Cell>
+                        <Button size="slim" tone="critical" onClick={() => { if(confirm("Delete?")) { const d = new FormData(); d.append("action", "delete"); d.append("id", sub.id); d.append("shopifyGroupId", sub.shopifyGroupId); fetcher.submit(d, { method: "post" }); }}}>Delete</Button>
+                      </IndexTable.Cell>
+                    </IndexTable.Row>
+                  ))}
+                </IndexTable>
+              )}
+            </Card>
+          </Layout.Section>
+        </Layout>
+        <Modal open={showModal} onClose={handleCancel} title="Create Subscription Plan" primaryAction={{ content: 'Save', onAction: handleSave, loading: isLoading }}>
+          <Modal.Section>
+            <FormLayout>
+              <Select label="Type" options={[{ label: 'Product', value: 'product' }, { label: 'Collection', value: 'collection' }]} value={subscriptionType} onChange={(v) => { setSubscriptionType(v); setTargetIds([]); setPreviewProducts([]); }} />
+              {subscriptionType === 'product' ? <Select label="Select Product" options={[{ label: 'Select product', value: '' }, ...products.map(p => ({ label: p.title, value: p.id }))]} onChange={handleProductSelect} /> : <Select label="Select Collection" options={[{ label: 'Select collection', value: '' }, ...collections.map(c => ({ label: c.title, value: c.id }))]} onChange={handleCollectionSelect} />}
+              {isLoadingCollection && <Box padding="400"><InlineStack align="center" gap="200"><Spinner size="small" /><Text>Loading products...</Text></InlineStack></Box>}
+              {previewProducts.length > 0 && !isLoadingCollection && (
+                <Box background="bg-surface-secondary" padding="300" borderRadius="200">
+                  <Text variant="bodyMd" fontWeight="bold">Applying to {previewProducts.length} products:</Text>
+                  <div style={{maxHeight: '150px', overflowY: 'auto', marginTop: '10px'}}>
+                    <BlockStack gap="200">
+                      {previewProducts.slice(0, 50).map(p => (
+                        <InlineStack key={p.id} align="start" gap="200">
+                          {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
+                          <Text variant="bodySm">{p.title}</Text>
+                        </InlineStack>
+                      ))}
+                    </BlockStack>
+                  </div>
                 </Box>
-              ))}
-            </BlockStack>
-          </FormLayout>
-        </Modal.Section>
-      </Modal>
-    </Page>
+              )}
+              <Divider />
+              <InlineStack align="space-between"><Text variant="headingSm">Intervals</Text><Button icon={PlusIcon} onClick={addPlan}>Add</Button></InlineStack>
+              <BlockStack gap="400">
+                {plans.map((plan, index) => (
+                  <Box key={index} background="bg-surface-secondary" padding="400" borderRadius="200">
+                    <BlockStack gap="300">
+                      <InlineStack align="space-between"><Text fontWeight="bold">Plan #{index+1}</Text><Button icon={DeleteIcon} tone="critical" variant="plain" onClick={() => removePlan(index)} /></InlineStack>
+                      <InlineStack gap="200">
+                        <div style={{flex:1}}><TextField label="Every" type="number" value={plan.intervalCount} onChange={(v)=>updatePlan(index, 'intervalCount', v)} autoComplete="off"/></div>
+                        <div style={{flex:1.5}}><Select label="Unit" options={[{ label: "Day(s)", value: "DAY" }, { label: "Week(s)", value: "WEEK" }, { label: "Month(s)", value: "MONTH" }, { label: "Year(s)", value: "YEAR" }]} value={plan.interval} onChange={(v)=>updatePlan(index, 'interval', v)} /></div>
+                        <div style={{flex:1}}><TextField label="Discount %" type="number" value={plan.discount} onChange={(v)=>updatePlan(index, 'discount', v)} suffix="%" autoComplete="off"/></div>
+                      </InlineStack>
+                      <TextField label="Max Charges (Optional)" type="number" value={plan.maxCycles} onChange={(v) => updatePlan(index, 'maxCycles', v)} placeholder="∞" autoComplete="off" />
+                    </BlockStack>
+                  </Box>
+                ))}
+              </BlockStack>
+            </FormLayout>
+          </Modal.Section>
+        </Modal>
+      </Page>
+    </AppProvider>
   );
 }
