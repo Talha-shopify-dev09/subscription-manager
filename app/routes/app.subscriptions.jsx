@@ -49,7 +49,6 @@ export async function action({ request }) {
   const formData = await request.formData();
   const actionType = formData.get("action");
   
-  // 1. FETCH COLLECTION PRODUCTS (Pagination Support)
   if (actionType === "fetchCollectionProducts") {
     const collectionId = formData.get("collectionId");
     try {
@@ -57,7 +56,6 @@ export async function action({ request }) {
       let hasNextPage = true;
       let cursor = null;
       
-      // Loop until we get EVERY product
       while (hasNextPage) {
         const response = await admin.graphql(
           `#graphql
@@ -65,7 +63,14 @@ export async function action({ request }) {
             collection(id: $id) {
               products(first: 250, after: $cursor) {
                 pageInfo { hasNextPage endCursor }
-                edges { node { id title images(first: 1) { nodes { originalSrc } } } }
+                edges { 
+                  node { 
+                    id title 
+                    media(first: 1) { 
+                      nodes { ... on MediaImage { image { url } } } 
+                    } 
+                  } 
+                }
               }
             }
           }`,
@@ -77,23 +82,19 @@ export async function action({ request }) {
         
         if (productsData) {
           const products = productsData.edges.map(e => ({
-            id: e.node.id, title: e.node.title, image: e.node.images.nodes[0]?.originalSrc
+            id: e.node.id, title: e.node.title, image: e.node.media.nodes[0]?.image?.url
           }));
           allProducts = [...allProducts, ...products];
           hasNextPage = productsData.pageInfo.hasNextPage;
           cursor = productsData.pageInfo.endCursor;
-        } else {
-          hasNextPage = false;
-        }
+        } else { hasNextPage = false; }
       }
       return Response.json({ collectionProducts: allProducts, totalCount: allProducts.length });
     } catch (error) {
-      console.error("Collection Fetch Error:", error);
       return Response.json({ error: "Failed to fetch collection" }, { status: 500 });
     }
   }
   
-  // 2. DELETE
   if (actionType === "delete") {
     const id = formData.get("id");
     const shopifyGroupId = formData.get("shopifyGroupId");
@@ -112,9 +113,8 @@ export async function action({ request }) {
     return Response.json({ success: true });
   }
 
-  // 3. CREATE SUBSCRIPTION
   if (actionType === "create") {
-    const type = formData.get("type");
+    const type = formData.get("type").toUpperCase(); // Match Enum PRODUCT/COLLECTION
     const targetTitle = formData.get("targetTitle");
     const originalPrice = formData.get("originalPrice");
     const plans = JSON.parse(formData.get("plans") || "[]");
@@ -122,21 +122,12 @@ export async function action({ request }) {
 
     if (targetIds.length === 0) return Response.json({ error: "No products selected" }, { status: 400 });
 
-    // A. Construct Plans
     const sellingPlansToCreate = plans.map((plan, index) => {
-      const billingPolicy = {
-        recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) }
-      };
-      if (plan.maxCycles && parseInt(plan.maxCycles) > 0) {
-        billingPolicy.recurring.maxCycles = parseInt(plan.maxCycles);
-      }
-
-      let planName = `Deliver every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s)`;
-      if(plan.maxCycles) planName += ` (Max ${plan.maxCycles})`;
-      planName += ` - Save ${plan.discount}%`;
+      const billingPolicy = { recurring: { interval: plan.interval, intervalCount: parseInt(plan.intervalCount) } };
+      if (plan.maxCycles && parseInt(plan.maxCycles) > 0) billingPolicy.recurring.maxCycles = parseInt(plan.maxCycles);
 
       return {
-        name: planName,
+        name: `Deliver every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s)`,
         options: [`Every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s)`],
         position: index + 1,
         category: "SUBSCRIPTION", 
@@ -147,7 +138,6 @@ export async function action({ request }) {
     });
 
     try {
-      // B. Create Group (WITHOUT attaching products yet - this prevents the "first one only" bug)
       const response = await admin.graphql(
         `#graphql
         mutation sellingPlanGroupCreate($input: SellingPlanGroupInput!) {
@@ -161,82 +151,53 @@ export async function action({ request }) {
             userErrors { field message }
           }
         }`,
-        {
-          variables: {
-            input: {
-              name: `Subscription: ${targetTitle}`,
-              merchantCode: `sub-${Date.now()}`,
-              options: ["Delivery Interval"],
-              position: 1,
-              sellingPlansToCreate
-            }
-          }
-        }
+        { variables: { input: { name: `Subscription: ${targetTitle}`, merchantCode: `sub-${Date.now()}`, options: ["Delivery Interval"], position: 1, sellingPlansToCreate } } }
       );
 
       const responseJson = await response.json();
-
-      if (responseJson.data?.sellingPlanGroupCreate?.userErrors?.length > 0) {
-        return Response.json({ error: responseJson.data.sellingPlanGroupCreate.userErrors }, { status: 400 });
-      }
+      if (responseJson.data?.sellingPlanGroupCreate?.userErrors?.length > 0) return Response.json({ error: responseJson.data.sellingPlanGroupCreate.userErrors[0].message }, { status: 400 });
 
       const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
-      console.log(`✅ Group Created: ${newGroup.id}. Now attaching ${targetIds.length} products...`);
-
-      // C. Explicitly Attach Products (Batching for safety)
-      const batchSize = 50; // Safe batch size
+      const batchSize = 50; 
       
       for (let i = 0; i < targetIds.length; i += batchSize) {
         const batch = targetIds.slice(i, i + batchSize);
-        console.log(`Attaching batch ${i} - ${i + batch.length}`);
-        
         await admin.graphql(
           `#graphql
           mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
             sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
-              sellingPlanGroup { id }
-              userErrors { field message }
+              userErrors { message }
             }
           }`,
           { variables: { id: newGroup.id, productIds: batch } }
         );
       }
 
-      // D. Save to DB
       const shopifyPlanIdsMap = {};
       newGroup.sellingPlans.edges.forEach(({ node }) => {
-         const interval = node.billingPolicy.interval;
-         const count = node.billingPolicy.intervalCount;
-         plans.forEach((p, index) => {
-            if (p.interval === interval && parseInt(p.intervalCount) === count) {
-               shopifyPlanIdsMap[index + 1] = node.id;
-            }
-         });
+          const key = `${node.billingPolicy.interval}_${node.billingPolicy.intervalCount}`;
+          shopifyPlanIdsMap[key] = node.id;
       });
 
       await db.subscription.create({
         data: {
           shop: session.shop,
-          type, 
-          // Always save the first ID or Collection ID as the main reference
-          targetId: type === 'collection' ? (formData.get("collectionId") || targetIds[0]) : targetIds[0],
+          type: type === 'COLLECTION' ? 'COLLECTION' : 'PRODUCT', 
+          targetId: formData.get("collectionId") || targetIds[0],
           targetTitle, 
           originalPrice: originalPrice || "0",
-          plansData: JSON.stringify(plans),
+          plansData: plans, // Direct object for Json type
           shopifyGroupId: newGroup.id,
-          shopifyPlanIds: JSON.stringify(shopifyPlanIdsMap),
+          shopifyPlanIds: shopifyPlanIdsMap, // Direct object for Json type
           enabled: true
         }
       });
 
       return Response.json({ success: true, productsAttached: targetIds.length });
-
     } catch (error) {
-      console.error("SERVER ERROR:", error);
       return Response.json({ error: "System Error: " + error.message }, { status: 500 });
     }
   }
-  
   return Response.json({ success: true });
 }
 
@@ -250,7 +211,6 @@ export default function Subscriptions() {
   const [subscriptionType, setSubscriptionType] = useState("product");
   const [plans, setPlans] = useState([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
   
-  // UI State
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [selectedTitle, setSelectedTitle] = useState("");
   const [selectedPrice, setSelectedPrice] = useState("");
@@ -260,7 +220,6 @@ export default function Subscriptions() {
   const isLoading = ["loading", "submitting"].includes(fetcher.state);
   const isLoadingCollection = ["loading", "submitting"].includes(collectionFetcher.state);
 
-  // --- HANDLERS ---
   const addPlan = () => setPlans([...plans, { interval: "MONTH", intervalCount: 1, discount: 0, maxCycles: "" }]);
   const removePlan = (index) => { const n = [...plans]; n.splice(index, 1); setPlans(n); };
   const updatePlan = (index, field, value) => { const n = [...plans]; n[index][field] = value; setPlans(n); };
@@ -287,8 +246,6 @@ export default function Subscriptions() {
         setSelectedTitle(collection.title);
         setSelectedPrice("N/A");
         setSelectedCollectionId(collection.id);
-        
-        // Trigger explicit fetch
         const formData = new FormData();
         formData.append("action", "fetchCollectionProducts");
         formData.append("collectionId", collection.id);
@@ -306,17 +263,14 @@ export default function Subscriptions() {
 
   const handleSave = useCallback(() => {
     if (targetIds.length === 0) return shopify.toast.show("No products selected", { isError: true });
-    
     const data = new FormData();
     data.append("action", "create");
     data.append("type", subscriptionType);
     data.append("targetTitle", selectedTitle);
     data.append("originalPrice", selectedPrice);
-    // Explicitly send the list of IDs we gathered
     data.append("targetIds", JSON.stringify(targetIds)); 
     data.append("plans", JSON.stringify(plans));
     if (subscriptionType === 'collection') data.append("collectionId", selectedCollectionId);
-    
     fetcher.submit(data, { method: "post" });
   }, [targetIds, subscriptionType, selectedTitle, selectedPrice, plans, fetcher, shopify, selectedCollectionId]);
 
@@ -326,106 +280,81 @@ export default function Subscriptions() {
       handleCancel();
     }
     if (fetcher.state === "idle" && fetcher.data?.error) {
-         // Handle error object or string
-         const msg = typeof fetcher.data.error === 'string' ? fetcher.data.error : "Failed to create";
-         shopify.toast.show(msg, { isError: true });
+      shopify.toast.show(fetcher.data.error, { isError: true });
     }
   }, [fetcher.state, fetcher.data, handleCancel, shopify]);
 
-  const productOptions = [{ label: 'Select product', value: '' }, ...products.map(p => ({ label: `${p.title}`, value: p.id }))];
-  const collectionOptions = [{ label: 'Select collection', value: '' }, ...collections.map(c => ({ label: c.title, value: c.id }))];
-  const intervalOptions = [{ label: "Day(s)", value: "DAY" }, { label: "Week(s)", value: "WEEK" }, { label: "Month(s)", value: "MONTH" }, { label: "Year(s)", value: "YEAR" }];
-
   return (
-    <AppProvider i18n={enTranslations}>
-      <Page>
-        <TitleBar title="Subscription Manager">
-          <button variant="primary" onClick={() => setShowModal(true)}>Create Subscription</button>
-        </TitleBar>
-        <Layout>
-          <Layout.Section>
-            <Card padding="0">
-              {subscriptions.length === 0 ? (
-                <EmptyState heading="No subscriptions" action={{ content: 'Create Subscription', onAction: () => setShowModal(true) }} image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png">
-                  <p>Create your first plan.</p>
-                </EmptyState>
-              ) : (
-                <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={subscriptions.length} headings={[{ title: 'Target' }, { title: 'Plans' }, { title: 'Action' }]}>
-                  {subscriptions.map((sub, index) => {
-                    let plansDisplay = []; try { plansDisplay = JSON.parse(sub.plansData || '[]'); } catch(e){}
-                    return (
-                      <IndexTable.Row id={sub.id} key={sub.id} position={index}>
-                        <IndexTable.Cell><Text fontWeight="bold">{sub.targetTitle}</Text></IndexTable.Cell>
-                        <IndexTable.Cell>
-                          <InlineStack gap="100" wrap>
-                            {plansDisplay.map((p, i) => <Badge key={i} tone="info">Every {p.intervalCount} {p.interval.toLowerCase()}</Badge>)}
-                          </InlineStack>
-                        </IndexTable.Cell>
-                        <IndexTable.Cell>
-                          <Button size="slim" tone="critical" onClick={() => { if(confirm("Delete?")) { const d = new FormData(); d.append("action", "delete"); d.append("id", sub.id); d.append("shopifyGroupId", sub.shopifyGroupId); fetcher.submit(d, { method: "post" }); }}}>Delete</Button>
-                        </IndexTable.Cell>
-                      </IndexTable.Row>
-                    );
-                  })}
-                </IndexTable>
-              )}
-            </Card>
-          </Layout.Section>
-        </Layout>
-        <Modal open={showModal} onClose={handleCancel} title="Create Subscription Plan" primaryAction={{ content: 'Save', onAction: handleSave, loading: isLoading }}>
-          <Modal.Section>
-            <FormLayout>
-              <Select label="Type" options={[{ label: 'Product', value: 'product' }, { label: 'Collection', value: 'collection' }]} value={subscriptionType} onChange={(v) => { setSubscriptionType(v); setTargetIds([]); setPreviewProducts([]); }} />
-              
-              {subscriptionType === 'product' ? (
-                <Select label="Select Product" options={productOptions} onChange={handleProductSelect} />
-              ) : (
-                <Select label="Select Collection" options={collectionOptions} onChange={handleCollectionSelect} />
-              )}
-              
-              {isLoadingCollection && (
-                <Box padding="400"><InlineStack align="center" gap="200"><Spinner size="small" /><Text>Loading products...</Text></InlineStack></Box>
-              )}
-              
-              {previewProducts.length > 0 && !isLoadingCollection && (
-                  <Box background="bg-surface-secondary" padding="300" borderRadius="200">
-                      <Text variant="bodyMd" fontWeight="bold">Applying to {previewProducts.length} products:</Text>
-                      <div style={{maxHeight: '150px', overflowY: 'auto', marginTop: '10px'}}>
-                          <BlockStack gap="200">
-                              {previewProducts.slice(0, 50).map(p => (
-                                  <InlineStack key={p.id} align="start" gap="200">
-                                      {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
-                                      <Text variant="bodySm">{p.title}</Text>
-                                  </InlineStack>
-                              ))}
-                          </BlockStack>
-                      </div>
-                  </Box>
-              )}
-
-              <Divider />
-              <InlineStack align="space-between"><Text variant="headingSm">Intervals</Text><Button icon={PlusIcon} onClick={addPlan}>Add</Button></InlineStack>
-              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-              <BlockStack gap="400">
+    <Page>
+      <TitleBar title="Socoba Subscriptions">
+        <button variant="primary" onClick={() => setShowModal(true)}>Create Plan</button>
+      </TitleBar>
+      <Layout>
+        <Layout.Section>
+          <Card padding="0">
+            {subscriptions.length === 0 ? (
+              <EmptyState heading="No subscriptions" action={{ content: 'Create Subscription', onAction: () => setShowModal(true) }} image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png" />
+            ) : (
+              <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={subscriptions.length} headings={[{ title: 'Target' }, { title: 'Plans' }, { title: 'Action' }]}>
+                {subscriptions.map((sub, index) => (
+                  <IndexTable.Row id={sub.id} key={sub.id} position={index}>
+                    <IndexTable.Cell><Text fontWeight="bold">{sub.targetTitle}</Text></IndexTable.Cell>
+                    <IndexTable.Cell>
+                      <InlineStack gap="100" wrap>
+                        {sub.plansData.map((p, i) => <Badge key={i} tone="info">Every {p.intervalCount} {p.interval.toLowerCase()}</Badge>)}
+                      </InlineStack>
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      <Button size="slim" tone="critical" onClick={() => { if(confirm("Delete?")) { const d = new FormData(); d.append("action", "delete"); d.append("id", sub.id); d.append("shopifyGroupId", sub.shopifyGroupId); fetcher.submit(d, { method: "post" }); }}}>Delete</Button>
+                    </IndexTable.Cell>
+                  </IndexTable.Row>
+                ))}
+              </IndexTable>
+            )}
+          </Card>
+        </Layout.Section>
+      </Layout>
+      <Modal open={showModal} onClose={handleCancel} title="Create Subscription Plan" primaryAction={{ content: 'Save', onAction: handleSave, loading: isLoading }}>
+        <Modal.Section>
+          <FormLayout>
+            <Select label="Type" options={[{ label: 'Product', value: 'product' }, { label: 'Collection', value: 'collection' }]} value={subscriptionType} onChange={(v) => { setSubscriptionType(v); setTargetIds([]); setPreviewProducts([]); }} />
+            {subscriptionType === 'product' ? <Select label="Select Product" options={[{ label: 'Select product', value: '' }, ...products.map(p => ({ label: p.title, value: p.id }))]} onChange={handleProductSelect} /> : <Select label="Select Collection" options={[{ label: 'Select collection', value: '' }, ...collections.map(c => ({ label: c.title, value: c.id }))]} onChange={handleCollectionSelect} />}
+            {isLoadingCollection && <Box padding="400"><InlineStack align="center" gap="200"><Spinner size="small" /><Text>Loading products...</Text></InlineStack></Box>}
+            {previewProducts.length > 0 && !isLoadingCollection && (
+              <Box background="bg-surface-secondary" padding="300" borderRadius="200">
+                <Text variant="bodyMd" fontWeight="bold">Applying to {previewProducts.length} products:</Text>
+                <div style={{maxHeight: '150px', overflowY: 'auto', marginTop: '10px'}}>
+                  <BlockStack gap="200">
+                    {previewProducts.slice(0, 50).map(p => (
+                      <InlineStack key={p.id} align="start" gap="200">
+                        {p.image && <Thumbnail source={p.image} size="small" alt={p.title}/>}
+                        <Text variant="bodySm">{p.title}</Text>
+                      </InlineStack>
+                    ))}
+                  </BlockStack>
+                </div>
+              </Box>
+            )}
+            <Divider />
+            <InlineStack align="space-between"><Text variant="headingSm">Intervals</Text><Button icon={PlusIcon} onClick={addPlan}>Add</Button></InlineStack>
+            <BlockStack gap="400">
               {plans.map((plan, index) => (
                 <Box key={index} background="bg-surface-secondary" padding="400" borderRadius="200">
                   <BlockStack gap="300">
                     <InlineStack align="space-between"><Text fontWeight="bold">Plan #{index+1}</Text><Button icon={DeleteIcon} tone="critical" variant="plain" onClick={() => removePlan(index)} /></InlineStack>
                     <InlineStack gap="200">
                       <div style={{flex:1}}><TextField label="Every" type="number" value={plan.intervalCount} onChange={(v)=>updatePlan(index, 'intervalCount', v)} autoComplete="off"/></div>
-                      <div style={{flex:1.5}}><Select label="Unit" options={intervalOptions} value={plan.interval} onChange={(v)=>updatePlan(index, 'interval', v)} /></div>
+                      <div style={{flex:1.5}}><Select label="Unit" options={[{ label: "Day(s)", value: "DAY" }, { label: "Week(s)", value: "WEEK" }, { label: "Month(s)", value: "MONTH" }, { label: "Year(s)", value: "YEAR" }]} value={plan.interval} onChange={(v)=>updatePlan(index, 'interval', v)} /></div>
                       <div style={{flex:1}}><TextField label="Discount %" type="number" value={plan.discount} onChange={(v)=>updatePlan(index, 'discount', v)} suffix="%" autoComplete="off"/></div>
                     </InlineStack>
                     <TextField label="Max Charges (Optional)" type="number" value={plan.maxCycles} onChange={(v) => updatePlan(index, 'maxCycles', v)} placeholder="∞" autoComplete="off" />
                   </BlockStack>
                 </Box>
               ))}
-              </BlockStack>
-              </div>
-            </FormLayout>
-          </Modal.Section>
-        </Modal>
-      </Page>
-    </AppProvider>
+            </BlockStack>
+          </FormLayout>
+        </Modal.Section>
+      </Modal>
+    </Page>
   );
 }

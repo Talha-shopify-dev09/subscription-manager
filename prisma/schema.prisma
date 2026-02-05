@@ -9,55 +9,107 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- ENUMS ---
+// Using Enums prevents typos in your database and code
+enum SubscriptionType {
+  PRODUCT
+  COLLECTION
+}
+
+enum ContractStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  EXPIRED
+  FAILED
+}
+
+// --- SESSION MODEL ---
 model Session {
-  id          String    @id
-  shop        String
-  state       String
-  isOnline    Boolean   @default(false)
-  scope       String?
-  expires     DateTime?
-  accessToken String
-  userId      BigInt?
-  firstName   String?
-  lastName    String?
-  email       String?
-  accountOwner Boolean   @default(false)
-  locale      String?
-  collaborator Boolean?  @default(false)
-  emailVerified Boolean? @default(false)
-  refreshToken String?
+  id              String    @id
+  shop            String
+  state           String
+  isOnline        Boolean   @default(false)
+  scope           String?
+  expires         DateTime?
+  accessToken     String
+  userId          BigInt?
+  firstName       String?
+  lastName        String?
+  email           String?
+  accountOwner    Boolean   @default(false)
+  locale          String?
+  collaborator    Boolean?  @default(false)
+  emailVerified   Boolean?  @default(false)
+  refreshToken    String?
   refreshTokenExpires DateTime?
 }
 
-// SUBSCRIPTION MODEL
+// --- SUBSCRIPTION PLAN MODEL ---
 model Subscription {
-  id             String   @id @default(uuid())
+  id             String           @id @default(uuid())
   shop           String
-  type           String   // "product" or "collection"
-  targetId       String
+  type           SubscriptionType @default(PRODUCT)
+  targetId       String           // Shopify GID for the product or collection
   targetTitle    String
   originalPrice  String
+  
+  // Using Json type removes the need for JSON.parse/stringify in your code
+  plansData      Json             
+  shopifyPlanIds Json?            
 
-  // Stores your custom plans as a JSON string
-  plansData      String   
+  shopifyGroupId String?          // gid://shopify/SellingPlanGroup/123
+  enabled        Boolean          @default(true)
+  
+  contracts      Contract[]       // Relation to actual customer contracts
+  
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  shopifyGroupId String?
-  shopifyPlanIds String?  
-  enabled        Boolean  @default(true)
-  createdAt      DateTime @default(now())
+  @@index([shop])
 }
 
-// --- BUNDLE MODEL (UPDATED) ---
+// --- BUNDLE MODEL ---
 model Bundle {
   id           String   @id @default(uuid())
   shop         String
   title        String
-  price        String?  // Optional fixed price for the whole bundle
-  discount     String?  // Optional percentage off
+  price        String?  
+  discount     String?  
+  discountCode String?  
+  discountId   String?  // gid://shopify/DiscountAutomaticNode/123
   
-  discountCode String?  // Stores the human-readable code (e.g. "BUNDLE-123")
-  discountId   String?  // <--- NEW: Stores the Shopify GID (gid://shopify/DiscountAutomaticNode/123)
+  productIds   Json     // Stores GIDs as a JSON array
   
-  productIds   String   // JSON string of products
+  contracts    Contract[] 
+
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([shop])
+}
+
+// --- CONTRACT MODEL ---
+model Contract {
+  id              String         @id // gid://shopify/SubscriptionContract/123
+  shop            String
+  customerId      String?
+  customerName    String?
+  customerEmail   String?
+  status          ContractStatus @default(ACTIVE)
+  nextBillingDate DateTime?
+  currencyCode    String         @default("USD")
+  
+  // Explicit Relations
+  planId          String?        
+  subscription    Subscription?  @relation(fields: [planId], references: [id])
+  
+  bundleId        String?
+  bundle          Bundle?        @relation(fields: [bundleId], references: [id])
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([shop])
+  @@index([status])
 }

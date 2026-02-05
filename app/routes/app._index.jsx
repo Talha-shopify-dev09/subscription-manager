@@ -1,6 +1,5 @@
-import { useEffect } from "react";
-import { useFetcher, Link, useLoaderData } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { json } from "@react-router/node";
+import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
   AppProvider,
@@ -16,130 +15,32 @@ import {
   Link as PolarisLink,
 } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
+import db from "../db.server"; 
 
 export const loader = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
 
-  // 1. FETCH SUBSCRIPTION STATS (With Safety Check)
+  // FETCH STATS FROM PRISMA (Faster and cleaner)
   try {
-    const statsResponse = await admin.graphql(
-      `#graphql
-      query getSubscriptionStats {
-        active: subscriptionContracts(first: 200, query: "status:ACTIVE") {
-          edges { node { id } }
-        }
-        cancelled: subscriptionContracts(first: 200, query: "status:CANCELLED") {
-          edges { node { id } }
-        }
-        paused: subscriptionContracts(first: 200, query: "status:PAUSED") {
-          edges { node { id } }
-        }
-      }`
-    );
+    const [activeCount, pausedCount, cancelledCount] = await Promise.all([
+      db.contract.count({ where: { shop: session.shop, status: "ACTIVE" } }),
+      db.contract.count({ where: { shop: session.shop, status: "PAUSED" } }),
+      db.contract.count({ where: { shop: session.shop, status: "CANCELLED" } }),
+    ]);
 
-    const statsJson = await statsResponse.json();
-
-    // Prevent crash if scopes are missing or API fails
-    if (statsJson.errors || !statsJson.data) {
-      console.log("⚠️ API Error:", statsJson.errors);
-      return { activeCount: 0, cancelledCount: 0, pausedCount: 0 };
-    }
-
-    return {
-      activeCount: statsJson.data.active.edges.length,
-      cancelledCount: statsJson.data.cancelled.edges.length,
-      pausedCount: statsJson.data.paused.edges.length,
-    };
+    return json({ activeCount, pausedCount, cancelledCount });
   } catch (error) {
-    console.error("🔥 Loader Crash:", error);
-    return { activeCount: 0, cancelledCount: 0, pausedCount: 0 };
+    console.error("Dashboard Loader Error:", error);
+    return json({ activeCount: 0, pausedCount: 0, cancelledCount: 0 });
   }
-};
-
-export const action = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-  const product = responseJson.data.productCreate.product;
-  const variantId = product.variants.edges[0].node.id;
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-  const variantResponseJson = await variantResponse.json();
-
-  return {
-    product: responseJson.data.productCreate.product,
-    variant: variantResponseJson.data.productVariantsBulkUpdate.productVariants,
-  };
 };
 
 export default function Index() {
   const { activeCount, cancelledCount, pausedCount } = useLoaderData();
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
-
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
 
   return (
     <AppProvider i18n={enTranslations}>
-      <Page title="Shopify App Template">
+      <Page title="Socoba Dashboard">
         <BlockStack gap="500">
           
           {/* --- ANALYTICS DASHBOARD --- */}
@@ -147,155 +48,106 @@ export default function Index() {
             <Layout.Section>
               <Card>
                   <BlockStack gap="200">
-                      <Text as="h2" variant="headingSm">Dashboard Overview</Text>
+                      <Text as="h2" variant="headingSm">Subscription Performance</Text>
                       <InlineGrid columns={3} gap="400">
                           {/* Active Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
-                          <BlockStack gap="200">
-                              <Text as="h3" variant="headingXs" tone="subdued">Active Subscribers</Text>
-                              <Text as="p" variant="headingXl" fontWeight="bold" tone="success">
-                              {activeCount}
-                              </Text>
-                          </BlockStack>
+                            <BlockStack gap="200">
+                                <Text as="h3" variant="headingXs" tone="subdued">Active Subscribers</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold" tone="success">
+                                  {activeCount}
+                                </Text>
+                            </BlockStack>
                           </Box>
 
                           {/* Cancelled Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
-                          <BlockStack gap="200">
-                              <Text as="h3" variant="headingXs" tone="subdued">Cancelled</Text>
-                              <Text as="p" variant="headingXl" fontWeight="bold" tone="critical">
-                              {cancelledCount}
-                              </Text>
-                          </BlockStack>
+                            <BlockStack gap="200">
+                                <Text as="h3" variant="headingXs" tone="subdued">Cancelled</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold" tone="critical">
+                                  {cancelledCount}
+                                </Text>
+                            </BlockStack>
                           </Box>
 
                           {/* Paused Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
-                          <BlockStack gap="200">
-                              <Text as="h3" variant="headingXs" tone="subdued">Paused</Text>
-                              <Text as="p" variant="headingXl" fontWeight="bold" tone="caution">
-                              {pausedCount}
-                              </Text>
-                          </BlockStack>
+                            <BlockStack gap="200">
+                                <Text as="h3" variant="headingXs" tone="subdued">Paused</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold" tone="caution">
+                                  {pausedCount}
+                                </Text>
+                            </BlockStack>
                           </Box>
                       </InlineGrid>
                   </BlockStack>
               </Card>
             </Layout.Section>
 
-            {/* --- SUBSCRIPTION MANAGER LINK --- */}
+            {/* --- SUBSCRIPTION MANAGER & CONTRACTS --- */}
             <Layout.Section>
-              <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">📦 Subscription Manager</Text>
-                  <Text as="p">
-                    Manage subscription plans for your products. Set different pricing for 1, 2, and 3-month subscriptions.
-                  </Text>
-                  <InlineGrid>
-                      <Link to="/app/subscriptions">
-                      <Button variant="primary">Manage Subscriptions</Button>
-                      </Link>
-                  </InlineGrid>
-                </BlockStack>
-              </Card>
+              <InlineGrid columns={2} gap="400">
+                <Card>
+                  <BlockStack gap="200">
+                    <Text as="h2" variant="headingMd">📦 Subscription Manager</Text>
+                    <Text as="p">
+                      Manage recurring plans and discounts. Set pricing for 1, 2, and 3-month cycles.
+                    </Text>
+                    <Link to="/app/subscriptions">
+                      <Button variant="primary">Manage Plans</Button>
+                    </Link>
+                  </BlockStack>
+                </Card>
+
+                <Card>
+                  <BlockStack gap="200">
+                    <Text as="h2" variant="headingMd">👥 Customer Contracts</Text>
+                    <Text as="p">
+                      Directly manage active subscriber agreements, pause billing, or cancel contracts.
+                    </Text>
+                    <Link to="/app/contracts">
+                      <Button>View Contracts</Button>
+                    </Link>
+                  </BlockStack>
+                </Card>
+              </InlineGrid>
             </Layout.Section>
 
-            {/* --- NEW: BUNDLE MANAGER LINK --- */}
+            {/* --- BUNDLE MANAGER --- */}
             <Layout.Section>
               <Card>
                 <BlockStack gap="200">
                   <Text as="h2" variant="headingMd">🎁 Fixed Bundles</Text>
                   <Text as="p">
-                    Create product bundles (e.g. "Snowboard + Boots") to sell together as a single unit.
+                    Create product bundles (e.g. "Sweater + Scarf") to sell together as a single unit with a discount.
                   </Text>
-                  <InlineGrid>
-                      <Link to="/app/bundles">
-                      <Button>Manage Bundles</Button>
-                      </Link>
-                  </InlineGrid>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
-
-            {/* --- TEMPLATE ACTIONS --- */}
-            <Layout.Section>
-              <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">Product Generator</Text>
-                  <Text as="p">
-                    Generate a product with GraphQL and get the JSON output for that product. 
-                    Learn more about the <PolarisLink url="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate" target="_blank">productCreate</PolarisLink> mutation.
-                  </Text>
-                  
-                  <InlineGrid gap="300" columns={2}>
-                    <Button 
-                      loading={isLoading} 
-                      onClick={generateProduct}
-                    >
-                      Generate a product
-                    </Button>
-                    
-                    {fetcher.data?.product && (
-                      <Button
-                        variant="plain"
-                        onClick={() => {
-                          shopify.intents.invoke?.("edit:shopify/Product", {
-                            value: fetcher.data?.product?.id,
-                          });
-                        }}
-                      >
-                        Edit product
-                      </Button>
-                    )}
-                  </InlineGrid>
-
-                  {fetcher.data?.product && (
-                    <BlockStack gap="200">
-                      <Text as="h3" variant="headingSm">Result</Text>
-                      <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                         <pre style={{margin: 0, overflowX: "scroll"}}>
-                             {JSON.stringify(fetcher.data.product, null, 2)}
-                         </pre>
-                      </Box>
-                    </BlockStack>
-                  )}
+                  <Link to="/app/bundles">
+                    <Button>Manage Bundles</Button>
+                  </Link>
                 </BlockStack>
               </Card>
             </Layout.Section>
             
-            {/* --- SIDEBAR --- */}
+            {/* --- SIDEBAR SPECS --- */}
             <Layout.Section variant="oneThird">
               <BlockStack gap="500">
                   <Card>
                       <BlockStack gap="200">
-                          <Text as="h2" variant="headingMd">App template specs</Text>
+                          <Text as="h2" variant="headingMd">System Specs</Text>
                           <BlockStack gap="200">
                               <InlineGrid columns="1fr auto">
                                   <Text as="span" fontWeight="bold">Framework</Text>
-                                  <PolarisLink url="https://reactrouter.com/" target="_blank">React Router</PolarisLink>
+                                  <Text as="span">React Router 7</Text>
                               </InlineGrid>
                               <InlineGrid columns="1fr auto">
-                                  <Text as="span" fontWeight="bold">Interface</Text>
-                                  <PolarisLink url="https://polaris.shopify.com" target="_blank">Polaris</PolarisLink>
+                                  <Text as="span" fontWeight="bold">Database</Text>
+                                  <Text as="span">PostgreSQL</Text>
                               </InlineGrid>
                               <InlineGrid columns="1fr auto">
-                                  <Text as="span" fontWeight="bold">API</Text>
-                                  <PolarisLink url="https://shopify.dev/docs/api/admin-graphql" target="_blank">GraphQL</PolarisLink>
+                                  <Text as="span" fontWeight="bold">ORM</Text>
+                                  <Text as="span">Prisma</Text>
                               </InlineGrid>
                           </BlockStack>
-                      </BlockStack>
-                  </Card>
-                  <Card>
-                      <BlockStack gap="200">
-                          <Text as="h2" variant="headingMd">Next steps</Text>
-                          <List>
-                              <List.Item>
-                                  Build an <PolarisLink url="https://shopify.dev/docs/apps/getting-started/build-app-example" target="_blank">example app</PolarisLink>
-                              </List.Item>
-                              <List.Item>
-                                  Explore API with <PolarisLink url="https://shopify.dev/docs/apps/tools/graphiql-admin-api" target="_blank">GraphiQL</PolarisLink>
-                              </List.Item>
-                          </List>
                       </BlockStack>
                   </Card>
               </BlockStack>
