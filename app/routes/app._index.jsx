@@ -1,4 +1,3 @@
-import { json } from "@react-router/node";
 import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
@@ -11,8 +10,6 @@ import {
   BlockStack,
   InlineGrid,
   Box,
-  List,
-  Link as PolarisLink,
 } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import db from "../db.server"; 
@@ -20,7 +17,7 @@ import db from "../db.server";
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
-  // FETCH STATS FROM PRISMA (Faster and cleaner)
+  // FETCH STATS FROM PRISMA (Faster and compatible with RR7)
   try {
     const [activeCount, pausedCount, cancelledCount] = await Promise.all([
       db.contract.count({ where: { shop: session.shop, status: "ACTIVE" } }),
@@ -28,10 +25,11 @@ export const loader = async ({ request }) => {
       db.contract.count({ where: { shop: session.shop, status: "CANCELLED" } }),
     ]);
 
-    return json({ activeCount, pausedCount, cancelledCount });
+    // Use native Response.json to avoid "@react-router/node" export errors
+    return Response.json({ activeCount, pausedCount, cancelledCount });
   } catch (error) {
     console.error("Dashboard Loader Error:", error);
-    return json({ activeCount: 0, pausedCount: 0, cancelledCount: 0 });
+    return Response.json({ activeCount: 0, pausedCount: 0, cancelledCount: 0 });
   }
 };
 
@@ -141,7 +139,7 @@ export default function Index() {
                               </InlineGrid>
                               <InlineGrid columns="1fr auto">
                                   <Text as="span" fontWeight="bold">Database</Text>
-                                  <Text as="span">PostgreSQL</Text>
+                                  <Text as="span">PostgreSQL (Neon)</Text>
                               </InlineGrid>
                               <InlineGrid columns="1fr auto">
                                   <Text as="span" fontWeight="bold">ORM</Text>

@@ -9,12 +9,15 @@ embedded = true
 automatically_update_urls_on_dev = true
 
 [webhooks]
-# Use a real Admin API version; 2024-07 is current at time of writing
-api_version = "2025-04"
+api_version = "2025-01" # Using the latest stable version
 
-  # App-uninstalled webhook (recommended)
+  # App lifecycle and Subscription tracking
   [[webhooks.subscriptions]]
-  topics = [ "app/uninstalled" ]
+  topics = [ 
+    "app/uninstalled", 
+    "subscription_contracts/create", 
+    "subscription_contracts/update" 
+  ]
   uri = "/webhooks"
 
   # Mandatory compliance webhooks for public apps
@@ -27,9 +30,8 @@ api_version = "2025-04"
   uri = "/webhooks"
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+# Scopes updated to include subscription and product permissions
 scopes = "read_customers,write_customers,read_price_rules,write_price_rules,read_discounts,write_discounts,read_products,write_products,write_own_subscription_contracts,read_own_subscription_contracts"
-optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
@@ -40,6 +42,7 @@ redirect_urls = [
 ]
 
 [app_proxy]
+# This makes your Customer Portal live at: store.com/apps/subscription-manager/portal
 url = "https://socoba-bundles-subscription.onrender.com"
 subpath = "subscription-manager"
 prefix = "apps"

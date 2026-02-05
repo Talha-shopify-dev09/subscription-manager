@@ -40,7 +40,8 @@ export async function loader({ request }) {
     orderBy: { createdAt: 'desc' }
   });
   
-  return { subscriptions, products, collections };
+  // Use native Response.json
+  return Response.json({ subscriptions, products, collections });
 }
 
 // --- ACTION ---
@@ -114,7 +115,8 @@ export async function action({ request }) {
   }
 
   if (actionType === "create") {
-    const type = formData.get("type").toUpperCase(); // Match Enum PRODUCT/COLLECTION
+    // UpperCase to match Prisma Enum PRODUCT/COLLECTION
+    const type = formData.get("type").toUpperCase(); 
     const targetTitle = formData.get("targetTitle");
     const originalPrice = formData.get("originalPrice");
     const plans = JSON.parse(formData.get("plans") || "[]");
@@ -301,6 +303,7 @@ export default function Subscriptions() {
                     <IndexTable.Cell><Text fontWeight="bold">{sub.targetTitle}</Text></IndexTable.Cell>
                     <IndexTable.Cell>
                       <InlineStack gap="100" wrap>
+                        {/* plansData is now an object, no JSON.parse needed */}
                         {sub.plansData.map((p, i) => <Badge key={i} tone="info">Every {p.intervalCount} {p.interval.toLowerCase()}</Badge>)}
                       </InlineStack>
                     </IndexTable.Cell>

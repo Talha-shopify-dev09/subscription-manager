@@ -1,14 +1,17 @@
-import { useLoaderData, useActionData } from "react-router";
+import { useLoaderData, useActionData, Form } from "react-router";
 import { authenticate } from "../shopify.server";
 
-// 1. LOADER (Unchanged)
+// 1. LOADER
 export async function loader({ request }) {
   try {
     const { admin } = await authenticate.public.appProxy(request);
     const url = new URL(request.url);
+    // App Proxy adds this param automatically when a customer is logged in
     const customerId = url.searchParams.get("logged_in_customer_id");
 
-    if (!customerId) return Response.json({ customer: null, contracts: [] });
+    if (!customerId) {
+      return Response.json({ customer: null, contracts: [] });
+    }
 
     const response = await admin.graphql(
       `#graphql
@@ -21,7 +24,12 @@ export async function loader({ request }) {
               status
               nextBillingDate
               lines(first: 5) { edges { node { title } } }
-              billingPolicy { interval intervalCount }
+              billingPolicy { 
+                ... on SellingPlanRecurringBillingPolicy {
+                  interval
+                  intervalCount
+                }
+              }
             }
           }
         }
@@ -30,108 +38,134 @@ export async function loader({ request }) {
     );
 
     const responseJson = await response.json();
+    
+    // Using native Response.json() to avoid export errors
     return Response.json({ 
       customer: responseJson.data?.customer || null, 
       contracts: responseJson.data?.customer?.subscriptionContracts?.nodes || [] 
     });
 
   } catch (error) {
-    return Response.json({ customer: null, contracts: [], error: error.message });
+    console.error("Portal Loader Error:", error);
+    return Response.json({ customer: null, contracts: [], error: "Could not load subscriptions." });
   }
 }
 
-// 2. ACTION (Unchanged)
+// 2. ACTION
 export async function action({ request }) {
   try {
     const { admin } = await authenticate.public.appProxy(request);
     const formData = await request.formData();
     const contractId = formData.get("contractId");
 
-    console.log("SERVER: Received cancel request for:", contractId);
-
-    if (!contractId) return Response.json({ error: "No Contract ID" });
+    if (!contractId) {
+      return Response.json({ error: "No Contract ID provided" });
+    }
 
     const response = await admin.graphql(
       `#graphql
-      mutation cancelContract($contractId: ID!) {
-        subscriptionContractCancel(subscriptionContractId: $contractId) {
+      mutation cancelContract($id: ID!) {
+        subscriptionContractCancel(contractId: $id) {
           contract { id status }
           userErrors { field message }
         }
       }`,
-      { variables: { contractId } }
+      { variables: { id: contractId } }
     );
     
     const responseJson = await response.json();
+    const userErrors = responseJson.data?.subscriptionContractCancel?.userErrors || [];
     
-    // Handle Errors
-    if (responseJson.errors) return Response.json({ error: JSON.stringify(responseJson.errors) });
-    const userErrors = responseJson.data.subscriptionContractCancel.userErrors;
-    if (userErrors.length > 0) return Response.json({ error: userErrors[0].message });
+    if (userErrors.length > 0) {
+      return Response.json({ error: userErrors[0].message });
+    }
     
     return Response.json({ success: true });
 
   } catch (err) {
-    console.error("Action Error:", err);
-    return Response.json({ error: err.message });
+    console.error("Portal Action Error:", err);
+    return Response.json({ error: "Failed to cancel subscription. Please try again." });
   }
 }
 
-// 3. UI COMPONENT (Native HTML Form)
+// 3. UI COMPONENT
 export default function CustomerPortal() {
   const data = useLoaderData();
   const actionData = useActionData(); 
 
   const styles = {
-    container: { maxWidth: "800px", margin: "0 auto", padding: "20px", fontFamily: "inherit" },
-    card: { border: "1px solid #e1e1e1", borderRadius: "8px", padding: "20px", marginBottom: "20px", background: "#fff" },
-    badge: (active) => ({
-      display: "inline-block", padding: "4px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: "bold",
-      background: active ? "#d1fae5" : "#fee2e2", color: active ? "#065f46" : "#991b1b"
+    container: { maxWidth: "600px", margin: "40px auto", padding: "20px", fontFamily: "sans-serif", color: "#333" },
+    card: { border: "1px solid #dfe3e8", borderRadius: "12px", padding: "24px", marginBottom: "20px", background: "#fff", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" },
+    badge: (status) => ({
+      display: "inline-block", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600", textTransform: "uppercase",
+      background: status === 'ACTIVE' ? "#e3f9ee" : "#f4f6f8", 
+      color: status === 'ACTIVE' ? "#007e33" : "#637381"
     }),
     btn: {
-      background: "#ef4444", color: "white", border: "none", padding: "8px 16px", borderRadius: "4px",
-      cursor: "pointer", fontSize: "14px", marginTop: "10px"
+      background: "#d82c0d", color: "white", border: "none", padding: "10px 20px", borderRadius: "6px",
+      cursor: "pointer", fontSize: "14px", fontWeight: "600", marginTop: "16px", width: "100%"
     },
-    success: { padding: '15px', background: '#d1fae5', color: '#065f46', marginBottom: '20px', borderRadius: '4px' },
-    error: { padding: '15px', background: '#fee2e2', color: '#991b1b', marginBottom: '20px', borderRadius: '4px' }
+    success: { padding: '15px', background: '#e3f9ee', color: '#007e33', marginBottom: '20px', borderRadius: '8px', textAlign: 'center' },
+    error: { padding: '15px', background: '#fff1f0', color: '#d82c0d', marginBottom: '20px', borderRadius: '8px', textAlign: 'center' }
   };
 
-  if (data?.error) return <div style={{color:'red'}}>Error: {data.error}</div>;
+  if (data?.error) return <div style={styles.error}>{data.error}</div>;
+  
+  // Handled missing customer (not logged in)
+  if (!data?.customer) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <p>Please log in to your store account to manage your subscriptions.</p>
+        </div>
+      </div>
+    );
+  }
 
   const { customer, contracts } = data;
 
-  if (!customer) return <div style={styles.container}>Please log in.</div>;
-
   return (
     <div style={styles.container}>
-      <h1>Hi, {customer.firstName}</h1>
+      <h2 style={{ marginBottom: "24px" }}>Manage Subscriptions</h2>
+      <p style={{ marginBottom: "32px" }}>Hello <strong>{customer.firstName}</strong>, here are your recurring orders.</p>
 
-      {/* MESSAGES */}
-      {actionData?.success && <div style={styles.success}>Subscription Cancelled!</div>}
-      {actionData?.error && <div style={styles.error}>Error: {actionData.error}</div>}
+      {actionData?.success && <div style={styles.success}>Your subscription has been cancelled successfully.</div>}
+      {actionData?.error && <div style={styles.error}>{actionData.error}</div>}
 
-      {contracts.length === 0 ? <p>No active subscriptions.</p> : contracts.map(contract => (
+      {contracts.length === 0 ? (
+        <p>You don't have any active subscriptions yet.</p>
+      ) : (
+        contracts.map(contract => (
           <div key={contract.id} style={styles.card}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <h3>{contract.lines.edges[0]?.node.title || "Subscription"}</h3>
-              <span style={styles.badge(contract.status === 'ACTIVE')}>{contract.status}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <span style={{ fontSize: "16px", fontWeight: "bold" }}>
+                {contract.lines.edges[0]?.node.title || "Subscription Bundle"}
+              </span>
+              <span style={styles.badge(contract.status)}>{contract.status}</span>
             </div>
-            <p>Every {contract.billingPolicy.intervalCount} {contract.billingPolicy.interval.toLowerCase()}(s)</p>
             
-            {/* NATIVE FORM: This uses standard HTML. 
-               It does not rely on React onClick. It CANNOT fail to submit.
-            */}
+            <p style={{ color: "#637381", fontSize: "14px", margin: "4px 0" }}>
+              Frequency: Every {contract.billingPolicy.intervalCount} {contract.billingPolicy.interval.toLowerCase()}(s)
+            </p>
+            <p style={{ color: "#637381", fontSize: "14px", margin: "4px 0" }}>
+              Next Charge: {contract.nextBillingDate ? new Date(contract.nextBillingDate).toLocaleDateString() : 'N/A'}
+            </p>
+            
             {contract.status === 'ACTIVE' && (
-              <form method="POST">
+              <Form method="POST">
                 <input type="hidden" name="contractId" value={contract.id} />
-                <button type="submit" style={styles.btn}>
+                <button 
+                  type="submit" 
+                  style={styles.btn}
+                  onClick={(e) => { if(!confirm("Are you sure? This cannot be undone.")) e.preventDefault(); }}
+                >
                   Cancel Subscription
                 </button>
-              </form>
+              </Form>
             )}
           </div>
-        ))}
+        ))
+      )}
     </div>
   );
 }
