@@ -1,40 +1,45 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "466d1063c75d0584538920e0e227cab5"
-name = "subscription-manager"
-application_url = "https://subscription-manager-5ask.onrender.com"
+client_id = "0ff88f0c1bebc82bb6062e9a8a30c6bf"
+name = "Socoba Bundle and Subscription"
+application_url = "https://socoba-bundles-subscription.onrender.com"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
 
 [webhooks]
-api_version = "2026-04"
+# Use a real Admin API version; 2024-07 is current at time of writing
+api_version = "2025-04"
 
+  # App-uninstalled webhook (recommended)
   [[webhooks.subscriptions]]
   topics = [ "app/uninstalled" ]
-  uri = "/webhooks/app/uninstalled"
+  uri = "/webhooks"
 
+  # Mandatory compliance webhooks for public apps
   [[webhooks.subscriptions]]
-  topics = [ "app/scopes_update" ]
-  uri = "/webhooks/app/scopes_update"
+  compliance_topics = [
+    "customers/data_request",
+    "customers/redact",
+    "shop/redact"
+  ]
+  uri = "/webhooks"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,read_customer_payment_methods,read_orders,write_orders,read_products,write_products,read_purchase_options,write_purchase_options,write_own_subscription_contracts,read_own_subscription_contracts,write_discounts,read_discounts"
+scopes = "read_customers,write_customers,read_price_rules,write_price_rules,read_discounts,write_discounts,read_products,write_products,write_own_subscription_contracts,read_own_subscription_contracts"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
-
-
 [auth]
 redirect_urls = [
-"https://subscription-manager-5ask.onrender.com/auth/callback",
-"https://subscription-manager-5ask.onrender.com/auth/shopify/callback",
-"https://subscription-manager-5ask.onrender.com/api/auth/callback" 
+  "https://socoba-bundles-subscription.onrender.com/auth/callback",
+  "https://socoba-bundles-subscription.onrender.com/auth/shopify/callback",
+  "https://socoba-bundles-subscription.onrender.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://subscription-manager-5ask.onrender.com/"
+url = "https://socoba-bundles-subscription.onrender.com"
 subpath = "subscription-manager"
 prefix = "apps"
