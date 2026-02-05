@@ -43,6 +43,6 @@ redirect_urls = [
 
 [app_proxy]
 # This makes your Customer Portal live at: store.com/apps/subscription-manager/portal
-url = "https://socoba-bundles-subscription.onrender.com"
+url = "https://socoba-bundles-subscription.onrender.com/portal"
 subpath = "subscription-manager"
 prefix = "apps"
