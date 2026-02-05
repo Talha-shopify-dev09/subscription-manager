@@ -2,29 +2,25 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
 export async function loader({ request, params }) {
-  // 1. Authenticate (Allow App Proxy)
-  await authenticate.public.appProxy(request);
+  // 1. Authenticate (This extracts the session/shop context)
+  const { session } = await authenticate.public.appProxy(request);
 
-  // 2. Get the raw ID
   const rawId = params.productId;
-
   if (!rawId) {
-    // FIX: Use standard Response.json instead of importing 'json'
     return Response.json({ error: "Product ID required" }, { status: 400 });
   }
 
-  // 3. Convert to Shopify GID format
   const targetId = `gid://shopify/Product/${rawId}`;
 
-  // 4. Query the Database
+  // 2. Query the Database (Scoped to the current shop for security)
   const subscription = await db.subscription.findFirst({
     where: {
+      shop: session.shop, // Security: Ensure we only show plans for THIS shop
       targetId: targetId
     }
   });
 
-  // 5. Return the result
-  // React Router v7 loves standard Response objects
+  // 3. Return the result
   return Response.json({ 
     subscription: subscription || null 
   });

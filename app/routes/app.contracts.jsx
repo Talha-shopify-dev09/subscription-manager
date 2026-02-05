@@ -1,4 +1,3 @@
-import { json } from "@react-router/node";
 import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
@@ -29,7 +28,7 @@ export async function loader({ request }) {
   );
 
   const jsonResponse = await response.json();
-  return json({ contracts: jsonResponse.data?.subscriptionContracts?.edges || [] });
+  return Response.json({ contracts: jsonResponse.data?.subscriptionContracts?.edges || [] });
 }
 
 export default function Contracts() {
