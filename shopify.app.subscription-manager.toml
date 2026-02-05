@@ -25,6 +25,6 @@ redirect_urls = [
 ]
 
 [app_proxy]
-url = "https://subscription-manager-5ask.onrender.com"
+url = "https://socoba-bundles-subscription.onrender.com/portal"
 subpath = "subscription-manager"
 prefix = "apps"
