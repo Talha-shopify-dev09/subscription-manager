@@ -9,7 +9,7 @@ embedded = true
 automatically_update_urls_on_dev = true
 
 [webhooks]
-api_version = "2026-04"
+api_version = "2025-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
@@ -19,12 +19,12 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://subscription-manager-5ask.onrender.com/auth/callback",
-  "https://subscription-manager-5ask.onrender.com/auth/shopify/callback",
-  "https://subscription-manager-5ask.onrender.com/api/auth/callback"
+ "https://socoba-bundles-subscription.onrender.com/auth/callback",
+  "https://socoba-bundles-subscription.onrender.com/auth/shopify/callback",
+  "https://socoba-bundles-subscription.onrender.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://socoba-bundles-subscription.onrender.com/portal"
+url = "https://socoba-bundles-subscription.onrender.com"
 subpath = "subscription-manager"
 prefix = "apps"

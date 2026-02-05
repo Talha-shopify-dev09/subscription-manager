@@ -9,7 +9,7 @@ embedded = true
 automatically_update_urls_on_dev = true
 
 [webhooks]
-api_version = "2025-01" # Using the latest stable version
+api_version = "2025-04" # Using the latest stable version
 
   # App lifecycle and Subscription tracking
   [[webhooks.subscriptions]]
@@ -43,6 +43,6 @@ redirect_urls = [
 
 [app_proxy]
 # This makes your Customer Portal live at: store.com/apps/subscription-manager/portal
-url = "https://socoba-bundles-subscription.onrender.com/portal"
+url = "https://socoba-bundles-subscription.onrender.com"
 subpath = "subscription-manager"
 prefix = "apps"
