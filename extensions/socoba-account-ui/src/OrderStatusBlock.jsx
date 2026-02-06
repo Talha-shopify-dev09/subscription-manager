@@ -32,9 +32,9 @@ function Extension() {
           If they have subscriptions, they'll see them. 
           If not, your portal.jsx handles the empty state.
         */}
-        <Link to="extension:/subscription-manager/portal">
-          Manage My Subscriptions
-        </Link>
+       <Link to="/apps/subscription-manager/portal">
+  Manage My Subscriptions
+</Link>
       </BlockStack>
     </Card>
   );
