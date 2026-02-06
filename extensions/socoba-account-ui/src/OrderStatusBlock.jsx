@@ -6,6 +6,7 @@ import {
   InlineStack,
   Link,
   Icon,
+  useApi,
 } from '@shopify/ui-extensions-react/customer-account';
 
 export default reactExtension(
@@ -14,8 +15,13 @@ export default reactExtension(
 );
 
 function Extension() {
-  // We no longer use useOrder() for conditional logic to avoid the 'missing lines' bug.
-  
+  const { navigation } = useApi();
+
+  const handleNavigate = () => {
+    // onPress handles the event prevention automatically in many UI components
+    navigation.navigate('extension:socoba-subscription-portal');
+  };
+
   return (
     <Card padding>
       <BlockStack spacing="tight">
@@ -28,14 +34,10 @@ function Extension() {
           Manage your delivery frequency, update payment methods, or view your subscription history anytime.
         </Text>
 
-        {/* This link redirects the user to your App Proxy portal.
-          If they have subscriptions, they'll see them. 
-          If not, your portal.jsx handles the empty state.
-        */}
-
-<Link to="extension:socoba-subscription-portal">
-  Manage My Subscription
-</Link>
+        {/* Use onPress instead of onClick for Shopify UI components */}
+        <Link onPress={handleNavigate}>
+          Manage My Subscription
+        </Link>
       </BlockStack>
     </Card>
   );

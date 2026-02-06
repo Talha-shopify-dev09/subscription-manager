@@ -1,6 +1,6 @@
 api_version = "2025-04"
 
-# 1. THE BUTTON (Order Status Block)
+# 1. THE BUTTON
 [[extensions]]
 name = "socoba-account-widget"
 handle = "socoba-account-widget"
@@ -15,7 +15,7 @@ target = "customer-account.order-status.block.render"
 [extensions.capabilities]
 api_access = true
 
-# 2. THE FULL PAGE (Subscription Portal)
+# 2. THE FULL PAGE
 [[extensions]]
 name = "socoba-subscription-portal"
 handle = "socoba-subscription-portal"
