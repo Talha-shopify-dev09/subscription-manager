@@ -14,28 +14,31 @@ export async function loader({ request }) {
     }
 
     const response = await admin.graphql(
-      `#graphql
-      query getCustomerContracts($id: ID!) {
-        customer(id: $id) {
-          firstName
-          subscriptionContracts(first: 10) {
-            nodes {
-              id
-              status
-              nextBillingDate
-              lines(first: 5) { edges { node { title } } }
-              billingPolicy { 
-                ... on SellingPlanRecurringBillingPolicy {
-                  interval
-                  intervalCount
-                }
-              }
-            }
+  `#graphql
+  query getCustomerContracts($id: ID!) {
+    customer(id: $id) {
+      firstName
+      subscriptionContracts(first: 10) {
+        nodes {
+          id
+          status
+          nextBillingDate
+          lines(first: 5) { 
+            edges { 
+              node { title } 
+            } 
+          }
+          billingPolicy { 
+            # In 2025-04, we access these fields directly on the policy
+            interval
+            intervalCount
           }
         }
-      }`,
-      { variables: { id: `gid://shopify/Customer/${customerId}` } }
-    );
+      }
+    }
+  }`,
+  { variables: { id: `gid://shopify/Customer/${customerId}` } }
+);
 
     const responseJson = await response.json();
     
