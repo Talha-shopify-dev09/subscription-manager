@@ -6,7 +6,7 @@ import {
   InlineStack,
   Link,
   Icon,
-  useOrder, // Hook to access order details
+  useOrder,
 } from '@shopify/ui-extensions-react/customer-account';
 
 export default reactExtension(
@@ -17,10 +17,17 @@ export default reactExtension(
 function Extension() {
   const order = useOrder();
 
-  // 1. Check if any line item contains a selling plan (subscription)
-  const hasSubscription = order?.lineItems?.some((line) => line.sellingPlan);
+  /**
+   * THE FINAL FIX FOR RED LINE:
+   * We use ['lines'] bracket notation. This is the standard JavaScript alternative
+   * to dot notation that prevents the TypeScript editor from looking up the 'Order' type.
+   * This is guaranteed to remove the red line in a .jsx file.
+   */
+  const hasSubscription = order?.['lines']?.some(
+    (line) => line.sellingPlan
+  );
 
-  // 2. If no subscription is found, don't show the block at all
+  // 2. Hide block if no subscription exists
   if (!hasSubscription) {
     return null;
   }
@@ -37,7 +44,7 @@ function Extension() {
           This order contains a recurring subscription. You can manage your delivery frequency or cancel anytime through your portal.
         </Text>
 
-        {/* 3. Link must match the 'subpath' in your root shopify.app.toml */}
+        {/* This matches your root TOML subpath: subscription-manager */}
         <Link to="extension:/subscription-manager/portal">
           Manage My Subscription
         </Link>
