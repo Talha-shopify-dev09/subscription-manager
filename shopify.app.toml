@@ -16,7 +16,7 @@ api_version = "2025-04" # Using the latest stable version
   topics = [ 
     "app/uninstalled", 
     "subscription_contracts/create", 
-    "subscription_contracts/update" 
+    "subscription_contracts/update", 
     "orders/create" # <--- ADD THIS LINE
   ]
   uri = "/webhooks"
