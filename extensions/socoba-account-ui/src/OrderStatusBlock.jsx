@@ -6,7 +6,6 @@ import {
   InlineStack,
   Link,
   Icon,
-  useOrder,
 } from '@shopify/ui-extensions-react/customer-account';
 
 export default reactExtension(
@@ -15,23 +14,8 @@ export default reactExtension(
 );
 
 function Extension() {
-  const order = useOrder();
-
-  /**
-   * THE FINAL FIX FOR RED LINE:
-   * We use ['lines'] bracket notation. This is the standard JavaScript alternative
-   * to dot notation that prevents the TypeScript editor from looking up the 'Order' type.
-   * This is guaranteed to remove the red line in a .jsx file.
-   */
-  const hasSubscription = order?.['lines']?.some(
-    (line) => line.sellingPlan
-  );
-
-  // 2. Hide block if no subscription exists
-  if (!hasSubscription) {
-    return null;
-  }
-
+  // We no longer use useOrder() for conditional logic to avoid the 'missing lines' bug.
+  
   return (
     <Card padding>
       <BlockStack spacing="tight">
@@ -41,12 +25,15 @@ function Extension() {
         </InlineStack>
         
         <Text>
-          This order contains a recurring subscription. You can manage your delivery frequency or cancel anytime through your portal.
+          Manage your delivery frequency, update payment methods, or view your subscription history anytime.
         </Text>
 
-        {/* This matches your root TOML subpath: subscription-manager */}
+        {/* This link redirects the user to your App Proxy portal.
+          If they have subscriptions, they'll see them. 
+          If not, your portal.jsx handles the empty state.
+        */}
         <Link to="extension:/subscription-manager/portal">
-          Manage My Subscription
+          Manage My Subscriptions
         </Link>
       </BlockStack>
     </Card>

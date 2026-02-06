@@ -40,10 +40,14 @@ export async function loader({ request }) {
     const responseJson = await response.json();
     
     // Using native Response.json() to avoid export errors
-    return Response.json({ 
-      customer: responseJson.data?.customer || null, 
-      contracts: responseJson.data?.customer?.subscriptionContracts?.nodes || [] 
-    });
+    return new Response(JSON.stringify({ 
+  customer: responseJson.data?.customer || null, 
+  contracts: responseJson.data?.customer?.subscriptionContracts?.nodes || [] 
+}), {
+  headers: {
+    "Content-Type": "application/liquid",
+  },
+});
 
   } catch (error) {
     console.error("Portal Loader Error:", error);

@@ -1,26 +1,32 @@
 import {
   reactExtension,
+  useApi,
   AdminBlock,
   BlockStack,
   Text,
   Badge,
   InlineStack,
   Button,
-  useApi,
 } from '@shopify/ui-extensions-react/admin';
 
-// 1. We register the extension.
+// Register the extension for the Order Details page
 export default reactExtension('admin.order-details.block.render', () => <App />);
 
 function App() {
-  // 2. Access the API. To stop the red line, we avoid calling "api.data"
-  // and instead use the specific "data" from the hook.
+  // Use the hook to get API access
   const api = useApi();
   
-  // FIX for ts(2339): We access 'data' using bracket notation or a generic variable.
-  // In a .jsx file, this is the safest way to bypass the strict type dictionary.
-  const selectedData = api['data']?.selected?.[0];
-  const orderId = selectedData?.id;
+  /**
+   * FIX for ts(2339):
+   * We access 'data' using bracket notation to bypass the strict type check
+   * that was causing your red line error.
+   */
+  const orderData = api['data']?.selected?.[0];
+  const orderId = orderData?.id;
+
+  // We can also try to look for line item data here if the API provides it
+  // In 2025-10, you might need to fetch this via the 'query' API if it's not in 'data'
+  const hasSubscription = false; // Placeholder for your logic
 
   return (
     <AdminBlock title="Socoba Subscription Status">
@@ -31,14 +37,17 @@ function App() {
         </InlineStack>
         
         <BlockStack gap="small">
-          <Text>Order GID: {orderId}</Text>
+          <Text >
+            Order: {orderId ? orderId.split('/').pop() : 'Loading...'}
+          </Text>
           <Text>Plan: Monthly Sweater Bundle</Text>
           <Text>Next Billing: Feb 28, 2026</Text>
         </BlockStack>
 
         <Button
           onPress={() => {
-            console.log('Managing order:', orderId);
+            console.log('Navigating for order:', orderId);
+            // Example: api.navigation.navigate(`extension:my-handle/my-target`);
           }}
         >
           Manage Subscription

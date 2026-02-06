@@ -1,10 +1,16 @@
-api_version = "2025-04"
+api_version = "2025-10"
 [[extensions]]
 # Change the merchant-facing name of the extension in locales/en.default.json
 name = "t:name"
 handle = "subscription-admin-block"
 type = "ui_extension"
 uid = "b6f5d27f-728f-ce09-7be6-9ccac526867a07df0ad7"
+
+[extensions.capabilities]
+# Critical: Allows the extension to query Shopify data and see line details
+api_access = true
+# Optional: Allows your extension to talk to your Render backend
+network_access = true
 
 # Only 1 target can be specified for each Admin block extension
 [[extensions.targeting]]
