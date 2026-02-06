@@ -8,52 +8,6 @@ export const action = async ({ request }) => {
   console.log(`Received Webhook: ${topic} for shop ${shop}`);
 
   switch (topic) {
-    // --- 1. HANDLE AUTOMATIC ORDER TAGGING ---
-    case "ORDERS_CREATE": {
-      const orderId = payload.admin_graphql_api_id; // Format: gid://shopify/Order/XXXXX
-      const shortId = payload.id; // Numeric ID for unique tag creation
-
-      // Identify Subscriptions by looking for a Selling Plan ID
-      const isSubscription = payload.line_items.some(item => item.selling_plan_id);
-      
-      // Identify Bundles by looking for a custom property (e.g., _bundle_id)
-      const isBundle = payload.line_items.some(item => 
-        item.properties?.some(p => p.name === "_bundle_id" || p.name === "Bundle ID")
-      );
-
-      let tagToApply = "";
-      if (isSubscription) {
-        tagToApply = `Subscription-${shortId}`; // e.g., Subscription-6680123
-      } else if (isBundle) {
-        tagToApply = `Bundle-${shortId}`; // e.g., Bundle-6680123
-      }
-
-      // Execute the Admin API mutation to apply the tag if conditions are met
-      if (tagToApply && admin) {
-        try {
-          await admin.graphql(
-            `#graphql
-            mutation addOrderTag($id: ID!, $tags: [String!]!) {
-              tagsAdd(id: $id, tags: $tags) {
-                node { id }
-                userErrors { field message }
-              }
-            }`,
-            {
-              variables: {
-                id: orderId,
-                tags: [tagToApply]
-              }
-            }
-          );
-          console.log(`✅ Tagged Order ${shortId} as ${tagToApply}`);
-        } catch (error) {
-          console.error(`❌ Tagging failed for Order ${shortId}:`, error);
-        }
-      }
-      break;
-    }
-
     // --- 2. HANDLE NEW SUBSCRIPTIONS (DATABASE) ---
     case "SUBSCRIPTION_CONTRACTS_CREATE": {
       const { id, status, nextBillingDate, customer, currencyCode } = payload;

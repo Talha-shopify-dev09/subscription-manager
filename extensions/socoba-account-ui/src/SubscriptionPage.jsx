@@ -22,51 +22,28 @@ function SubscriptionPage() {
   const [hasTaggedOrder, setHasTaggedOrder] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Fetching contracts AND order tags to verify the subscription
-    query(`
-      query {
-        customer {
-          subscriptionContracts(first: 10) {
-            nodes {
-              id
-              status
-              nextBillingDate
-              lines(first: 1) {
-                nodes {
-                  title
-                }
-              }
-            }
-          }
-          orders(first: 10) {
-            nodes {
-              tags
-            }
+useEffect(() => {
+  query(`
+    query {
+      customer {
+        subscriptionContracts(first: 10) {
+          nodes {
+            id
+            status
+            nextBillingDate
+            lines(first: 1) { nodes { title } }
           }
         }
       }
-    `)
-    .then((result) => {
-      /** @type {any} */
-      const data = result.data;
-      const fetchedContracts = data?.customer?.subscriptionContracts?.nodes || [];
-      const fetchedOrders = data?.customer?.orders?.nodes || [];
-
-      // Check if any order has our custom app tag
-      const foundTag = fetchedOrders.some(order => 
-        order.tags.some(tag => tag.startsWith("Subscription-"))
-      );
-
-      setContracts(fetchedContracts);
-      setHasTaggedOrder(foundTag);
-      setLoading(false);
-    })
-    .catch((err) => {
-      console.error("Storefront API Error:", err);
-      setLoading(false);
-    });
-  }, [query]);
+    }
+  `)
+  .then((result) => {
+/** @type {any} */
+  const data = result.data;    
+  setContracts(data?.customer?.subscriptionContracts?.nodes || []);
+    setLoading(false);
+  })
+}, [query]);
 
   if (loading) {
     return (
