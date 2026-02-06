@@ -7,7 +7,6 @@ import {
   Card,
   Spinner,
   Divider,
-  Button,
 } from '@shopify/ui-extensions-react/customer-account';
 import { useEffect, useState } from 'react';
 
@@ -18,90 +17,94 @@ export default reactExtension(
 
 function SubscriptionPage() {
   const { query } = useApi();
-  const [contracts, setContracts] = useState([]);
-  const [hasTaggedOrder, setHasTaggedOrder] = useState(false);
+  const [appOrders, setAppOrders] = useState([]); // Removed type annotation
   const [loading, setLoading] = useState(true);
 
-useEffect(() => {
-  query(`
-    query {
-      customer {
-        subscriptionContracts(first: 10) {
-          nodes {
-            id
-            status
-            nextBillingDate
-            lines(first: 1) { nodes { title } }
+  useEffect(() => {
+    // 1. First, fetch orders to check history
+    query(`
+      query {
+        customer {
+          orders(first: 20) {
+            nodes {
+              id
+              name
+              lineItems(first: 10) {
+                nodes {
+                  title
+                  sellingPlanId
+                  customAttributes {
+                    key
+                    value
+                  }
+                }
+              }
+            }
           }
         }
       }
-    }
-  `)
-  .then((result) => {
-/** @type {any} */
-  const data = result.data;    
-  setContracts(data?.customer?.subscriptionContracts?.nodes || []);
-    setLoading(false);
-  })
-}, [query]);
+    `)
+    .then((result) => {
+  /** @type {any} */
+  const data = result.data;
+  
+  // Define allOrders here by reaching into the customer object
+  const allOrders = data?.customer?.orders?.nodes || [];
+
+  // Now you can use allOrders for your filtering logic
+  const filtered = allOrders.filter((order) => {
+    return order.lineItems.nodes.some((item) => {
+      // 1. Check for subscription plans
+      const isAppSubscription = item.sellingPlanId !== null;
+      
+      // 2. Check for bundle attributes
+      const isAppBundle = item.customAttributes?.some(
+        (attr) => attr.key === "_bundle_id"
+      );
+
+      return isAppSubscription || isAppBundle;
+    });
+  });
+
+  setAppOrders(filtered);
+  setLoading(false);
+})
+    .catch((err) => {
+      console.error("API Error:", err);
+      setLoading(false);
+    });
+  }, [query]);
 
   if (loading) {
     return (
       <BlockStack inlineAlignment="center" padding="extraLoose">
         <Spinner />
-        <Text>Verifying your subscription status...</Text>
       </BlockStack>
     );
   }
 
-  // Logic: Show content if we have a contract OR a tagged order
-  const isSubscriber = contracts.length > 0 || hasTaggedOrder;
-
   return (
     <BlockStack spacing="loose">
-      <Heading>Manage Subscriptions</Heading>
+      <Heading>Your App Subscriptions</Heading>
       <Divider />
 
-      {!isSubscriber ? (
+      {appOrders.length === 0 ? (
         <Card padding>
-          <Text>You don't have any active subscriptions at this time.</Text>
+          <Text>No active subscriptions found from this app.</Text>
         </Card>
       ) : (
-        <>
-          {/* If we have a tagged order but no contract node yet, show a status message */}
-          {contracts.length === 0 && hasTaggedOrder && (
-            <Card padding>
-              <Text emphasis="bold">Your subscription is being activated.</Text>
-              <Text size="small">We've identified your order. Your management options will appear here shortly.</Text>
-            </Card>
-          )}
-
-          {contracts.map((contract) => (
-            <Card key={contract.id} padding>
-              <BlockStack spacing="tight">
-                <Text size="large" emphasis="bold">
-                  {contract.lines.nodes[0]?.title || "Subscription Bundle"}
+        appOrders.map((order) => (
+          <Card key={order.id} padding>
+            <BlockStack spacing="tight">
+              <Text emphasis="bold">Order {order.name}</Text>
+              {order.lineItems.nodes.map((item, i) => (
+                <Text key={i}>
+                  {item.title} {item.sellingPlanId ? "(Subscription)" : "(Bundle)"}
                 </Text>
-                
-                <BlockStack spacing="none">
-                  <Text>Status: {contract.status}</Text>
-                  <Text>
-                    Next Delivery: {contract.nextBillingDate ? new Date(contract.nextBillingDate).toLocaleDateString() : "N/A"}
-                  </Text>
-                </BlockStack>
-
-                {contract.status === 'ACTIVE' && (
-                  <Button 
-                    kind="secondary" 
-                    onPress={() => console.log("Cancel requested for:", contract.id)}
-                  >
-                    Cancel Subscription
-                  </Button>
-                )}
-              </BlockStack>
-            </Card>
-          ))}
-        </>
+              ))}
+            </BlockStack>
+          </Card>
+        ))
       )}
     </BlockStack>
   );

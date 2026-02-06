@@ -10,31 +10,40 @@ export const action = async ({ request }) => {
   switch (topic) {
     // --- 2. HANDLE NEW SUBSCRIPTIONS (DATABASE) ---
     case "SUBSCRIPTION_CONTRACTS_CREATE": {
-      const { id, status, nextBillingDate, customer, currencyCode } = payload;
-      try {
-        await db.contract.upsert({
-          where: { id: id },
-          update: {
-            status: status,
-            nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
-          },
-          create: {
-            id: id,
-            shop: shop,
-            customerId: customer?.id,
-            customerName: `${customer?.firstName || ""} ${customer?.lastName || ""}`.trim(),
-            customerEmail: customer?.email,
-            status: status,
-            nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
-            currencyCode: currencyCode || "USD",
-          },
-        });
-        console.log(`✅ Saved Contract ${id} for ${shop}`);
-      } catch (error) {
-        console.error("❌ Error saving contract:", error);
-      }
-      break;
-    }
+  const { id, status, nextBillingDate, customer, currencyCode, lines } = payload;
+  
+  // 1. Get the Product GID from the first line item to find the plan
+  const productGid = lines?.nodes[0]?.productId;
+
+  try {
+    // 2. Find your local plan ID based on the Product GID
+    const localPlan = await db.subscription.findFirst({
+      where: { targetId: productGid, shop: shop }
+    });
+
+    await db.contract.upsert({
+      where: { id: id },
+      update: {
+        status: status,
+        nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
+      },
+      create: {
+        id: id,
+        shop: shop,
+        customerId: customer?.id,
+        customerName: `${customer?.firstName || ""} ${customer?.lastName || ""}`.trim(),
+        customerEmail: customer?.email,
+        status: status,
+        nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
+        currencyCode: currencyCode || "USD",
+        planId: localPlan?.id, // 3. LINK THE CONTRACT TO THE PLAN
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error saving contract:", error);
+  }
+  break;
+}
 
     // --- 3. HANDLE SUBSCRIPTION UPDATES ---
     case "SUBSCRIPTION_CONTRACTS_UPDATE": {
