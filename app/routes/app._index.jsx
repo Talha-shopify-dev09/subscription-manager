@@ -14,25 +14,30 @@ import {
 import enTranslations from "@shopify/polaris/locales/en.json";
 import db from "../db.server"; 
 
+// --- LOADER ---
 export const loader = async ({ request }) => {
+  // 1. Authenticate the admin session
   const { session } = await authenticate.admin(request);
 
-  // FETCH STATS FROM PRISMA (Faster and compatible with RR7)
   try {
+    // 2. Query Prisma for subscription counts scoped to the current shop
+    // We use uppercase strings to match the Prisma Enum exactly
     const [activeCount, pausedCount, cancelledCount] = await Promise.all([
       db.contract.count({ where: { shop: session.shop, status: "ACTIVE" } }),
       db.contract.count({ where: { shop: session.shop, status: "PAUSED" } }),
       db.contract.count({ where: { shop: session.shop, status: "CANCELLED" } }),
     ]);
 
-    // Use native Response.json to avoid "@react-router/node" export errors
+    // 3. Return counts as a JSON response
     return Response.json({ activeCount, pausedCount, cancelledCount });
   } catch (error) {
     console.error("Dashboard Loader Error:", error);
+    // Fallback to zero if the database query fails
     return Response.json({ activeCount: 0, pausedCount: 0, cancelledCount: 0 });
   }
 };
 
+// --- COMPONENT ---
 export default function Index() {
   const { activeCount, cancelledCount, pausedCount } = useLoaderData();
 
@@ -82,14 +87,14 @@ export default function Index() {
               </Card>
             </Layout.Section>
 
-            {/* --- SUBSCRIPTION MANAGER & CONTRACTS --- */}
+            {/* --- NAVIGATION CARDS --- */}
             <Layout.Section>
               <InlineGrid columns={2} gap="400">
                 <Card>
                   <BlockStack gap="200">
                     <Text as="h2" variant="headingMd">📦 Subscription Manager</Text>
                     <Text as="p">
-                      Manage recurring plans and discounts. Set pricing for 1, 2, and 3-month cycles.
+                      Manage recurring plans and discounts. Set pricing for multiple cycles.
                     </Text>
                     <Link to="/app/subscriptions">
                       <Button variant="primary">Manage Plans</Button>
@@ -101,7 +106,7 @@ export default function Index() {
                   <BlockStack gap="200">
                     <Text as="h2" variant="headingMd">👥 Customer Contracts</Text>
                     <Text as="p">
-                      Directly manage active subscriber agreements, pause billing, or cancel contracts.
+                      Directly manage subscriber agreements, pause billing, or cancel contracts.
                     </Text>
                     <Link to="/app/contracts">
                       <Button>View Contracts</Button>
@@ -117,7 +122,7 @@ export default function Index() {
                 <BlockStack gap="200">
                   <Text as="h2" variant="headingMd">🎁 Fixed Bundles</Text>
                   <Text as="p">
-                    Create product bundles (e.g. "Sweater + Scarf") to sell together as a single unit with a discount.
+                    Create product bundles to sell together as a single unit with a discount.
                   </Text>
                   <Link to="/app/bundles">
                     <Button>Manage Bundles</Button>

@@ -2,11 +2,13 @@ import {
   reactExtension,
   useApi,
   BlockStack,
+  InlineStack, // Added to fix ts(2304)
   Text,
   Heading,
   Card,
   Spinner,
   Divider,
+  Badge,
 } from '@shopify/ui-extensions-react/customer-account';
 import { useEffect, useState } from 'react';
 
@@ -17,26 +19,22 @@ export default reactExtension(
 
 function SubscriptionPage() {
   const { query } = useApi();
-  const [appOrders, setAppOrders] = useState([]); // Removed type annotation
+  const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. First, fetch orders to check history
     query(`
       query {
         customer {
-          orders(first: 20) {
+          subscriptionContracts(first: 10) {
             nodes {
               id
-              name
-              lineItems(first: 10) {
+              status
+              nextBillingDate
+              lines(first: 5) {
                 nodes {
                   title
-                  sellingPlanId
-                  customAttributes {
-                    key
-                    value
-                  }
+                  quantity
                 }
               }
             }
@@ -44,33 +42,18 @@ function SubscriptionPage() {
         }
       }
     `)
-    .then((result) => {
-  /** @type {any} */
-  const data = result.data;
+   .then((result) => {
+  // We use it once here to grab everything inside it
+  const customerData = result?.data?.customer;
+
+  // Now you never have to type 'customer' again for the rest of this function
+  const fetchedNodes = customerData?.subscriptionContracts?.nodes || [];
   
-  // Define allOrders here by reaching into the customer object
-  const allOrders = data?.customer?.orders?.nodes || [];
-
-  // Now you can use allOrders for your filtering logic
-  const filtered = allOrders.filter((order) => {
-    return order.lineItems.nodes.some((item) => {
-      // 1. Check for subscription plans
-      const isAppSubscription = item.sellingPlanId !== null;
-      
-      // 2. Check for bundle attributes
-      const isAppBundle = item.customAttributes?.some(
-        (attr) => attr.key === "_bundle_id"
-      );
-
-      return isAppSubscription || isAppBundle;
-    });
-  });
-
-  setAppOrders(filtered);
+  setContracts(fetchedNodes);
   setLoading(false);
 })
     .catch((err) => {
-      console.error("API Error:", err);
+      console.error("Storefront API Error:", err);
       setLoading(false);
     });
   }, [query]);
@@ -79,29 +62,49 @@ function SubscriptionPage() {
     return (
       <BlockStack inlineAlignment="center" padding="extraLoose">
         <Spinner />
+        <Text>Loading your subscriptions...</Text>
       </BlockStack>
     );
   }
 
   return (
     <BlockStack spacing="loose">
-      <Heading>Your App Subscriptions</Heading>
+      <Heading>Manage Subscriptions</Heading>
       <Divider />
 
-      {appOrders.length === 0 ? (
+      {contracts.length === 0 ? (
         <Card padding>
-          <Text>No active subscriptions found from this app.</Text>
+          <Text>You don't have any active subscriptions at this time.</Text>
         </Card>
       ) : (
-        appOrders.map((order) => (
-          <Card key={order.id} padding>
+        contracts.map((contract) => (
+          <Card key={contract.id} padding>
             <BlockStack spacing="tight">
-              <Text emphasis="bold">Order {order.name}</Text>
-              {order.lineItems.nodes.map((item, i) => (
-                <Text key={i}>
-                  {item.title} {item.sellingPlanId ? "(Subscription)" : "(Bundle)"}
+              <Text size="large" emphasis="bold">
+                {contract.lines.nodes[0]?.title || "Subscription Plan"}
+              </Text>
+              
+              <BlockStack spacing="none">
+                {/* Fixed inlineAlignment to valid value 'start' */}
+                <InlineStack blockAlignment="center" inlineAlignment="start">
+                  <Text>Status: </Text>
+                  {/* Badge tone must be a literal: 'info', 'success', 'warning', or 'critical' */}
+                  <Badge tone={contract.status === 'ACTIVE' ? 'default' : 'subdued'}>
+  {contract.status}
+</Badge>
+                </InlineStack>
+                
+                {/* Changed 'color' to 'appearance' to fix ts(2322) */}
+                <Text appearance="subdued">
+                  Next Billing: {contract.nextBillingDate ? new Date(contract.nextBillingDate).toLocaleDateString() : "N/A"}
                 </Text>
-              ))}
+              </BlockStack>
+
+              <Divider />
+              
+              <Text size="small" appearance="subdued">
+                Contract ID: {contract.id.split('/').pop()}
+              </Text>
             </BlockStack>
           </Card>
         ))
