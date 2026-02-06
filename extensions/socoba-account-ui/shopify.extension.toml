@@ -1,30 +1,31 @@
-# Learn more about configuring your Customer account UI extension:
-# https://shopify.dev/api/customer-account-ui-extensions/unstable/configuration
-
-# The version of APIs your extension will receive. Learn more:
-# https://shopify.dev/docs/api/usage/versioning
 api_version = "2025-04"
 
+# 1. THE BUTTON (Order Status Block)
 [[extensions]]
-name = "socoba-account-ui"
-handle = "socoba-account-ui"
-type = "ui_extension"
-uid = "3fd87500-54ba-d374-d468-72f259428a62388978de"
+name = "socoba-account-widget"
+handle = "socoba-account-widget"
 
-# Controls where in Shopify your extension will be injected,
-# and the file that contains your extension’s source code. Learn more:
-# https://shopify.dev/docs/api/customer-account-ui-extensions/unstable/extension-targets-overview
+uid = "728196b1-c31d-41ee-e52d-c5e1a7cb6ffc2cb2459c"
+type = "ui_extension"
 
 [[extensions.targeting]]
 module = "./src/OrderStatusBlock.jsx"
 target = "customer-account.order-status.block.render"
 
 [extensions.capabilities]
-# Gives your extension access to directly query Shopify’s storefront API.
-# https://shopify.dev/docs/api/customer-account-ui-extensions/unstable/configuration#api-access
 api_access = true
 
-# Gives your extension access to make external network calls, using the
-# JavaScript `fetch()` API. Learn more:
-# https://shopify.dev/docs/api/customer-account-ui-extensions/unstable/configuration#network-access
-# network_access = true
+# 2. THE FULL PAGE (Subscription Portal)
+[[extensions]]
+name = "socoba-subscription-portal"
+handle = "socoba-subscription-portal"
+
+uid = "775aef5f-04d8-a74c-39e1-cf31c2b0e3a31d9f5e7c"
+type = "ui_extension"
+
+[[extensions.targeting]]
+module = "./src/SubscriptionPage.jsx"
+target = "customer-account.page.render"
+
+[extensions.capabilities]
+api_access = true

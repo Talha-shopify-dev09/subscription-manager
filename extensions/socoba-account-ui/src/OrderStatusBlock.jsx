@@ -32,8 +32,9 @@ function Extension() {
           If they have subscriptions, they'll see them. 
           If not, your portal.jsx handles the empty state.
         */}
-       <Link to="/apps/subscription-manager/portal">
-  Manage My Subscriptions
+
+<Link to="extension:socoba-subscription-portal">
+  Manage My Subscription
 </Link>
       </BlockStack>
     </Card>
