@@ -15,7 +15,7 @@ export const action = async ({ request }) => {
       const contractId = String(id);
       
       const productGid = lines?.[0]?.productId; 
-      const recurringPrice = payload.lines.nodes[0]?.pricingPolicy?.price?.amount;
+      const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
 
       try {
         let localPlan = await db.subscription.findFirst({
@@ -83,7 +83,7 @@ export const action = async ({ request }) => {
     case "SUBSCRIPTION_CONTRACTS_UPDATE": {
       const { id, status, nextBillingDate } = payload;
       const contractId = String(id);
-      const recurringPrice = payload.lines?.nodes[0]?.pricingPolicy?.price?.amount;
+      const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
       try {
         await db.contract.update({
           where: { id: contractId },
