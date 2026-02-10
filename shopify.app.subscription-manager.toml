@@ -1,8 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "466d1063c75d0584538920e0e227cab5"
-name = "subscription-manager"
-application_url = "https://subscription-manager-5ask.onrender.com"
+client_id = "0ff88f0c1bebc82bb6062e9a8a30c6bf"
+name = "Socoba Bundle and Subscription"
+application_url = "https://socoba-bundles-subscription.onrender.com"
 embedded = true
 
 [build]

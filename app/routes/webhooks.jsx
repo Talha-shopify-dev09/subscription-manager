@@ -3,7 +3,8 @@ import db from "../db.server";
 
 export const action = async ({ request }) => {
   // 1. Authenticate the webhook request
-  const { topic, shop, payload, session } = await authenticate.webhook(request);
+  // We include 'admin' here to allow GraphQL queries inside the webhook logic
+  const { topic, shop, payload, session, admin } = await authenticate.webhook(request);
 
   console.log(`Received Webhook: ${topic} for shop ${shop}`);
 
@@ -12,20 +13,49 @@ export const action = async ({ request }) => {
     case "SUBSCRIPTION_CONTRACTS_CREATE": {
       const { id, status, nextBillingDate, customer, currencyCode, lines } = payload;
       
-      // FIX: Webhooks provide 'lines' as a direct array
-      // We get the Product GID to link the contract to your local subscription plan
+      // Webhooks provide 'lines' as a direct array
       const productGid = lines?.[0]?.productId; 
 
       try {
-        // Find your local plan ID based on the Product GID and Shop
-        const localPlan = await db.subscription.findFirst({
+        // A. Try to find a direct Product Subscription match
+        let localPlan = await db.subscription.findFirst({
           where: { targetId: productGid, shop: shop }
         });
 
+        // B. IMPROVEMENT: If no direct product plan, check for Collection-based plans
+        if (!localPlan && admin && productGid) {
+          console.log(`🔍 No direct product plan. Checking collections for: ${productGid}`);
+          
+          const response = await admin.graphql(
+            `#graphql
+            query getProductCollections($id: ID!) {
+              product(id: $id) {
+                collections(first: 10) {
+                  nodes { id }
+                }
+              }
+            }`, 
+            { variables: { id: productGid } }
+          );
+
+          const collectionData = await response.json();
+          const collectionIds = collectionData.data?.product?.collections?.nodes.map(c => c.id) || [];
+
+          if (collectionIds.length > 0) {
+            localPlan = await db.subscription.findFirst({
+              where: { 
+                shop: shop,
+                targetId: { in: collectionIds },
+                type: 'COLLECTION'
+              }
+            });
+          }
+        }
+
+        // C. Save or Update the contract in your database
         await db.contract.upsert({
           where: { id: id },
           update: {
-            // Convert status to uppercase (e.g., 'active' -> 'ACTIVE') to match Prisma Enum
             status: status.toUpperCase(), 
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
           },
@@ -38,10 +68,11 @@ export const action = async ({ request }) => {
             status: status.toUpperCase(),
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
             currencyCode: currencyCode || "USD",
-            planId: localPlan?.id, // Linking the contract to the plan for the dashboard
+            planId: localPlan?.id, // Successfully links to Product OR Collection plans
           },
         });
-        console.log(`✅ Saved Contract ${id} for ${shop} (Linked to Plan: ${localPlan?.id || 'None'})`);
+
+        console.log(`✅ Saved Contract ${id} (Linked Plan: ${localPlan ? localPlan.targetTitle : 'None'})`);
       } catch (error) {
         console.error("❌ Error saving contract:", error);
       }
@@ -69,6 +100,7 @@ export const action = async ({ request }) => {
     // --- 4. APP UNINSTALL CLEANUP ---
     case "APP_UNINSTALLED": {
       if (session) {
+        // Clean up all shop data to comply with Shopify requirements
         await db.session.deleteMany({ where: { shop } });
         await db.subscription.deleteMany({ where: { shop } });
         await db.bundle.deleteMany({ where: { shop } });

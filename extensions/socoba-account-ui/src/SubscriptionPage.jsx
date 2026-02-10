@@ -2,13 +2,14 @@ import {
   reactExtension,
   useApi,
   BlockStack,
-  InlineStack, // Added to fix ts(2304)
+  InlineStack,
   Text,
   Heading,
   Card,
   Spinner,
   Divider,
   Badge,
+  Button, // Import Button
 } from '@shopify/ui-extensions-react/customer-account';
 import { useEffect, useState } from 'react';
 
@@ -21,6 +22,9 @@ function SubscriptionPage() {
   const { query } = useApi();
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // This is the bridge to your App Proxy (where the Cancel logic lives)
+  const PORTAL_URL = "/apps/subscription-manager/portal";
 
   useEffect(() => {
     query(`
@@ -42,16 +46,12 @@ function SubscriptionPage() {
         }
       }
     `)
-   .then((result) => {
-  // We use it once here to grab everything inside it
-  const customerData = result?.data?.customer;
-
-  // Now you never have to type 'customer' again for the rest of this function
-  const fetchedNodes = customerData?.subscriptionContracts?.nodes || [];
-  
-  setContracts(fetchedNodes);
-  setLoading(false);
-})
+    .then((result) => {
+      const customerData = result?.data?.customer;
+      const fetchedNodes = customerData?.subscriptionContracts?.nodes || [];
+      setContracts(fetchedNodes);
+      setLoading(false);
+    })
     .catch((err) => {
       console.error("Storefront API Error:", err);
       setLoading(false);
@@ -79,32 +79,36 @@ function SubscriptionPage() {
       ) : (
         contracts.map((contract) => (
           <Card key={contract.id} padding>
-            <BlockStack spacing="tight">
-              <Text size="large" emphasis="bold">
-                {contract.lines.nodes[0]?.title || "Subscription Plan"}
-              </Text>
-              
+            <BlockStack spacing="loose">
+              <InlineStack inlineAlignment="space-between" blockAlignment="center">
+                 <BlockStack spacing="extraTight">
+                    <Text size="large" emphasis="bold">
+                      {contract.lines.nodes[0]?.title || "Subscription Plan"}
+                    </Text>
+                    <InlineStack spacing="tight">
+                       <Text appearance="subdued">Status:</Text>
+                       {/* Using 'success' if allowed, falling back to 'default' if strict */}
+                       <Badge tone={contract.status === 'ACTIVE' ? 'success' : 'subdued'}>
+                          {contract.status}
+                       </Badge>
+                    </InlineStack>
+                 </BlockStack>
+
+                 {/* --- CRITICAL ADDITION: The Manage Button --- */}
+                 {/* This button takes the user to your App Proxy Portal to cancel/edit */}
+                 <Button kind="secondary" to={PORTAL_URL}>
+                    Manage
+                 </Button>
+              </InlineStack>
+
               <BlockStack spacing="none">
-                {/* Fixed inlineAlignment to valid value 'start' */}
-                <InlineStack blockAlignment="center" inlineAlignment="start">
-                  <Text>Status: </Text>
-                  {/* Badge tone must be a literal: 'info', 'success', 'warning', or 'critical' */}
-                  <Badge tone={contract.status === 'ACTIVE' ? 'default' : 'subdued'}>
-  {contract.status}
-</Badge>
-                </InlineStack>
-                
-                {/* Changed 'color' to 'appearance' to fix ts(2322) */}
                 <Text appearance="subdued">
                   Next Billing: {contract.nextBillingDate ? new Date(contract.nextBillingDate).toLocaleDateString() : "N/A"}
                 </Text>
+                <Text size="small" appearance="subdued">
+                   Contract ID: {contract.id.split('/').pop()}
+                </Text>
               </BlockStack>
-
-              <Divider />
-              
-              <Text size="small" appearance="subdued">
-                Contract ID: {contract.id.split('/').pop()}
-              </Text>
             </BlockStack>
           </Card>
         ))
