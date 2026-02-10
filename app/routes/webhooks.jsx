@@ -146,7 +146,7 @@ export const action = async ({ request }) => {
         console.log("Bundles from DB:", JSON.stringify(bundles, null, 2));
 
         const appliedBundleDiscount = discount_applications.find(
-          (da) => da.type === "automatic" && bundles.some(b => b.discountId === da.shopify_discount_id)
+          (da) => da.type === "automatic" && bundles.some(b => da.title && da.title.includes(b.title))
         );
 
         if (appliedBundleDiscount) {
