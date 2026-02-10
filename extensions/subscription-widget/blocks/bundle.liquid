@@ -1,10 +1,21 @@
-{% assign bundles = shop.metafields.my_app.active_bundles.value %}
+{% assign all_bundles = shop.metafields.my_app.active_bundles.value %}
 {% assign currency_symbol = cart.currency.symbol %}
 {% assign section_scope = 'bundle-' | append: section.id %}
+{% assign selected_bundle_id = section.settings.selected_bundle_id %}
+{% assign bundle_to_display = null %}
 
-{% if bundles != blank %}
+{% if selected_bundle_id != blank and all_bundles != blank %}
+  {% for b in all_bundles %}
+    {% if b.id == selected_bundle_id %}
+      {% assign bundle_to_display = b %}
+      {% break %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+
+{% if bundle_to_display != null %}
   <div class="{{ section_scope }} bundle-container" data-bundle-section>
-    {% for bundle in bundles %}
+  
       
       {% comment %} 
         Determine the image: 
@@ -14,17 +25,17 @@
       {% assign custom_image = block.settings.custom_bundle_image %}
       {% assign fallback_image = nil %}
       
-      <section class="bundle-wrapper" aria-labelledby="bundle-title-{{ section.id }}-{{ bundle.id }}">
+      <section class="bundle-wrapper" aria-labelledby="bundle-title-{{ section.id }}-{{ bundle_to_display.id }}">
         
         <div class="bundle-content-column">
           <header class="bundle-header">
-            <h2 id="bundle-title-{{ section.id }}-{{ bundle.id }}" class="bundle-title">
-              {{ bundle.title }}
+            <h2 id="bundle-title-{{ section.id }}-{{ bundle_to_display.id }}" class="bundle-title">
+              {{ bundle_to_display.title }}
             </h2>
           </header>
 
           <div class="bundle-list" role="list">
-            {% for product_info in bundle.products %}
+            {% for product_info in bundle_to_display.products %}
               {% assign prod = all_products[product_info.handle] %}
               {% if prod != empty %}
                 {% assign target_price_cents = product_info.bundlePrice | times: 100 | round %}
@@ -37,12 +48,12 @@
                   <div class="item-details">
                     <h3 class="product-title">{{ prod.title }}</h3>
                     <div class="item-meta">
-                       {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle.id | append: '-' | append: prod.id %}
+                       {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle_to_display.id | append: '-' | append: prod.id %}
                        <div class="variant-wrapper">
                          <select
                            id="{{ select_id }}"
                            class="bundle-variant-select"
-                           data-bundle-id="{{ bundle.id }}"
+                           data-bundle-id="{{ bundle_to_display.id }}"
                            data-product-handle="{{ product_info.handle }}"
                            data-target-price-cents="{{ target_price_cents }}"
                          >
@@ -78,7 +89,7 @@
                  <span class="bundle-savings-tag" data-bundle-savings-row hidden>
                     Save <span data-bundle-savings></span>
                  </span>
-                <span class="final-price" data-bundle-total>{{ currency_symbol }}{{ bundle.price }}</span>
+                <span class="final-price" data-bundle-total>{{ currency_symbol }}{{ bundle_to_display.price }}</span>
               </div>
             </div>
 
@@ -86,7 +97,7 @@
               type="button"
               class="add-bundle-btn"
               data-add-bundle
-              data-bundle-id="{{ bundle.id }}"
+              data-bundle-id="{{ bundle_to_display.id }}"
             >
               Buy Now
             </button>
@@ -96,9 +107,9 @@
         <div class="bundle-image-column">
           <div class="hero-image-wrapper">
              {% if custom_image != blank %}
-                <img src="{{ custom_image | image_url: width: 1200 }}" alt="{{ bundle.title | escape }}" loading="lazy">
+                <img src="{{ custom_image | image_url: width: 1200 }}" alt="{{ bundle_to_display.title | escape }}" loading="lazy">
              {% elsif fallback_image != blank %}
-                <img src="{{ fallback_image | image_url: width: 1200 }}" alt="{{ bundle.title | escape }}" loading="lazy">
+                <img src="{{ fallback_image | image_url: width: 1200 }}" alt="{{ bundle_to_display.title | escape }}" loading="lazy">
              {% else %}
                 <div class="image-fallback"></div>
              {% endif %}
@@ -106,7 +117,6 @@
         </div>
 
       </section>
-    {% endfor %}
   </div>
 
   <style>
@@ -288,17 +298,19 @@
 
       root.addEventListener('change', (e) => {
         if (e.target.classList.contains('bundle-variant-select')) {
-          updateUI(e.target.dataset.bundleId);
+          updateUI(e.target.dataset.bundleId); // Keep this for variant changes
         }
       });
 
-      root.querySelectorAll('.add-bundle-btn').forEach(btn => updateUI(btn.dataset.bundleId));
+      // Initial UI update for the displayed bundle
+      updateUI({{ bundle_to_display.id | json }});
 
       root.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-add-bundle]');
         if (!btn) return;
 
-        const bundleId = btn.dataset.bundleId;
+        // Use the bundle ID of the currently displayed bundle
+        const bundleId = {{ bundle_to_display.id | json }};
         const selects = root.querySelectorAll(`.bundle-variant-select[data-bundle-id="${bundleId}"]`);
         const items = Array.from(selects).map(sel => ({
           id: Number(sel.value),
@@ -336,6 +348,12 @@
       "id": "custom_bundle_image",
       "label": "Custom Bundle Image",
       "info": "If left blank, the first product image will be used."
+    },
+    {
+      "type": "text",
+      "id": "selected_bundle_id",
+      "label": "Bundle ID to Display",
+      "info": "Enter the unique ID of the bundle you want to show."
     }
   ]
 }
