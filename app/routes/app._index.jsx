@@ -20,48 +20,39 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
   try {
-    const [activeContracts, pausedCount, cancelledCount, bundlePurchaseCount, bundleContracts, allTransactions] = await Promise.all([
-      db.contract.findMany({ where: { shop: session.shop, status: "ACTIVE", planId: { not: null } } }),
-      db.contract.count({ where: { shop: session.shop, status: "PAUSED", planId: { not: null } } }),
-      db.contract.count({ where: { shop: session.shop, status: "CANCELLED", planId: { not: null } } }),
-      db.contract.count({ where: { shop: session.shop, bundleId: { not: null } } }),
-      db.contract.findMany({
-        where: { shop: session.shop, bundleId: { not: null } },
-        include: { bundle: true }
-      }),
-      db.transaction.findMany({ where: { shop: session.shop } })
-    ]);
-
-    const activeCount = activeContracts.length;
-
-    let totalBundleAmount = 0;
-    bundleContracts.forEach(contract => {
-      if (contract.bundle && contract.bundle.price) {
-        totalBundleAmount += parseFloat(contract.bundle.price);
-      }
-    });
-
-    let totalActiveSubscriptionAmount = 0;
-    activeContracts.forEach(contract => {
-      if (contract.recurringPrice) {
-        totalActiveSubscriptionAmount += parseFloat(contract.recurringPrice);
-      }
-    });
-
-    let totalSubscriptionEarnings = 0;
-    allTransactions.forEach(transaction => {
-      totalSubscriptionEarnings += parseFloat(transaction.amount);
-    });
-
-    return Response.json({
-      activeCount,
-      pausedCount,
-      cancelledCount,
-      bundlePurchaseCount,
-      totalBundleAmount,
-      totalActiveSubscriptionAmount,
-      totalSubscriptionEarnings
-    });
+        const [activeContracts, pausedCount, cancelledCount, bundleSalesCount, bundleSalesAmount, allTransactions] = await Promise.all([
+          db.contract.findMany({ where: { shop: session.shop, status: "ACTIVE", planId: { not: null } } }),
+          db.contract.count({ where: { shop: session.shop, status: "PAUSED", planId: { not: null } } }),
+          db.contract.count({ where: { shop: session.shop, status: "CANCELLED", planId: { not: null } } }),
+          db.bundleSale.count({ where: { shop: session.shop } }),
+          db.bundleSale.aggregate({ _sum: { totalAmount: true }, where: { shop: session.shop } }),
+          db.transaction.findMany({ where: { shop: session.shop } })
+        ]);
+    
+        const activeCount = activeContracts.length;
+        const totalBundleAmount = bundleSalesAmount._sum.totalAmount || 0;
+    
+        let totalActiveSubscriptionAmount = 0;
+        activeContracts.forEach(contract => {
+          if (contract.recurringPrice) {
+            totalActiveSubscriptionAmount += parseFloat(contract.recurringPrice);
+          }
+        });
+    
+        let totalSubscriptionEarnings = 0;
+        allTransactions.forEach(transaction => {
+          totalSubscriptionEarnings += parseFloat(transaction.amount);
+        });
+    
+        return Response.json({
+          activeCount,
+          pausedCount,
+          cancelledCount,
+          bundlePurchaseCount: bundleSalesCount,
+          totalBundleAmount,
+          totalActiveSubscriptionAmount,
+          totalSubscriptionEarnings
+        });
   } catch (error) {
     console.error("Dashboard Loader Error:", error);
     return Response.json({

@@ -132,7 +132,44 @@ export const action = async ({ request }) => {
       break;
     }
 
-    // --- 5. APP UNINSTALL CLEANUP ---
+    // --- 5. HANDLE NEW ORDERS (for bundle tracking) ---
+    case "ORDERS_CREATE": {
+      const { id: orderId, customer: customerData, total_price, currency, discount_applications } = payload;
+      
+      try {
+        const bundles = await db.bundle.findMany({
+          where: { shop: shop, discountId: { not: null } },
+          select: { id: true, title: true, discountId: true, price: true }
+        });
+
+        const appliedBundleDiscount = discount_applications.find(
+          (da) => da.type === "automatic" && bundles.some(b => b.discountId === da.shopify_discount_id)
+        );
+
+        if (appliedBundleDiscount) {
+          const matchedBundle = bundles.find(b => b.discountId === appliedBundleDiscount.shopify_discount_id);
+          if (matchedBundle) {
+            await db.bundleSale.create({
+              data: {
+                shop: shop,
+                orderId: String(orderId),
+                bundleId: matchedBundle.id,
+                bundleTitle: matchedBundle.title,
+                totalAmount: parseFloat(total_price),
+                currencyCode: currency,
+                customerId: String(customerData?.id) || null,
+              }
+            });
+            console.log(`🎁 Recorded bundle sale for Order ${orderId} (Bundle: ${matchedBundle.title})`);
+          }
+        }
+      } catch (error) {
+        console.error("❌ Error recording bundle sale:", error);
+      }
+      break;
+    }
+
+    // --- 6. APP UNINSTALL CLEANUP ---
     case "APP_UNINSTALLED": {
       if (session) {
         // Clean up all shop data to comply with Shopify requirements
@@ -140,6 +177,8 @@ export const action = async ({ request }) => {
         await db.subscription.deleteMany({ where: { shop } });
         await db.bundle.deleteMany({ where: { shop } });
         await db.contract.deleteMany({ where: { shop } });
+        await db.transaction.deleteMany({ where: { shop } }); // Clean up transactions
+        await db.bundleSale.deleteMany({ where: { shop } }); // Clean up bundle sales
         console.log(`🗑️ Cleaned up data for uninstalled shop: ${shop}`);
       }
       break;

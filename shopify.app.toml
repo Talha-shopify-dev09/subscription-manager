@@ -17,7 +17,8 @@ api_version = "2025-04" # Using the latest stable version
     "app/uninstalled", 
     "subscription_contracts/create", 
     "subscription_contracts/update",
-    "subscription_billing_attempts/success"
+    "subscription_billing_attempts/success",
+    "orders/create"
   ]
   uri = "/webhooks"
 

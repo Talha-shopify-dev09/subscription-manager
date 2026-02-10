@@ -132,3 +132,22 @@ model Transaction {
   @@index([shop])
   @@index([contractId])
 }
+
+// --- BUNDLE SALE MODEL ---
+model BundleSale {
+  id           String    @id @default(uuid())
+  shop         String
+  orderId      String    // Shopify Order GID
+  bundleId     String    // Our app's Bundle ID
+  bundleTitle  String
+  totalAmount  Decimal
+  currencyCode String
+  customerId   String?
+  
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([shop])
+  @@index([orderId])
+  @@index([bundleId])
+}
