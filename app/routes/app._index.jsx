@@ -28,6 +28,11 @@ export const loader = async ({ request }) => {
       db.contract.count({ where: { shop: session.shop, status: "CANCELLED" } }),
     ]);
 
+    console.log("Shop:", session.shop);
+    console.log("Active Count:", activeCount);
+    console.log("Paused Count:", pausedCount);
+    console.log("Cancelled Count:", cancelledCount);
+
     // 3. Return counts as a JSON response
     return Response.json({ activeCount, pausedCount, cancelledCount });
   } catch (error) {
