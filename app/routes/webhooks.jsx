@@ -150,7 +150,7 @@ export const action = async ({ request }) => {
         );
 
         if (appliedBundleDiscount) {
-          const matchedBundle = bundles.find(b => b.discountId === appliedBundleDiscount.shopify_discount_id);
+          const matchedBundle = bundles.find(b => appliedBundleDiscount.title.includes(b.title));
           if (matchedBundle) {
             await db.bundleSale.create({
               data: {
