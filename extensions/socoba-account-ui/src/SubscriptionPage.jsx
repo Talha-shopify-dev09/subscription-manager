@@ -49,6 +49,7 @@ function SubscriptionPage() {
       }
     `)
     .then((result) => {
+      console.log("Storefront API Query Result:", JSON.stringify(result, null, 2));
       const customerData = result?.data?.customer;
       const fetchedNodes = customerData?.subscriptionContracts?.nodes || [];
       setContracts(fetchedNodes);
