@@ -1,4 +1,10 @@
 {
   "name": "subscription-admin-block",
-  "welcome": "Welcome to the {{target}} extension!"
+  "welcome": "Welcome to the {{target}} extension!",
+  "title": "Subscription Status",
+  "status": "Status",
+  "next_billing": "Next Billing:",
+  "contract_id": "Contract ID:",
+  "view_in_app": "View in App",
+  "no_subscription": "No active subscription found for this customer."
 }

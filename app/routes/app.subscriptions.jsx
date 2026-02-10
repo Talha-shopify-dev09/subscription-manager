@@ -201,6 +201,31 @@ export async function action({ request }) {
   return Response.json({ success: true });
 }
 
+export function ErrorBoundary() {
+  return (
+    <AppProvider i18n={enTranslations}>
+      <Page>
+        <Layout>
+          <Layout.Section>
+            <Card>
+              <EmptyState
+                heading="There was an error loading your subscriptions."
+                action={{ content: 'Back', onAction: () => window.history.back() }}
+                image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+              >
+                <p>Please try again later.</p>
+              </EmptyState>
+            </Card>
+          </Layout.Section>
+        </Layout>
+      </Page>
+    </AppProvider>
+  );
+}
+
+
+import { useNavigation } from "react-router-dom";
+
 export default function Subscriptions() {
   const { subscriptions, products, collections } = useLoaderData();
   const fetcher = useFetcher();
@@ -283,6 +308,26 @@ export default function Subscriptions() {
       shopify.toast.show(fetcher.data.error, { isError: true });
     }
   }, [fetcher.state, fetcher.data, handleCancel, shopify]);
+
+  const { state } = useNavigation();
+
+  if (state === "loading") {
+    return (
+      <AppProvider i18n={enTranslations}>
+        <Page>
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px' }}>
+                  <Spinner accessibilityLabel="Loading subscriptions" size="large" />
+                </div>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        </Page>
+      </AppProvider>
+    );
+  }
 
   return (
     <AppProvider i18n={enTranslations}>

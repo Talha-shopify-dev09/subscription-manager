@@ -9,6 +9,7 @@ import {
   Button,
   Divider,
   ProgressIndicator,
+  useI18n // Import useI18n
 } from '@shopify/ui-extensions-react/admin';
 import { useEffect, useState } from 'react';
 
@@ -16,6 +17,7 @@ export default reactExtension('admin.order-details.block.render', () => <App />)
 
 function App() {
   const api = useApi();
+  const i18n = useI18n(); // Correctly obtain i18n
   const data = api['data'];
   const query = api['query'];
 
@@ -68,7 +70,7 @@ function App() {
 
   if (loading) {
     return (
-      <AdminBlock title="Subscription Status">
+      <AdminBlock title={i18n.translate('title')}>
         <BlockStack inlineAlignment="center">
           {/* FIX: Added required 'size' prop */}
           <ProgressIndicator size="small" />
@@ -79,17 +81,17 @@ function App() {
 
   if (!contract) {
     return (
-      <AdminBlock title="Subscription Status">
-        <Text>No active subscription found for this customer.</Text>
+      <AdminBlock title={i18n.translate('title')}>
+        <Text>{i18n.translate('no_subscription')}</Text>
       </AdminBlock>
     );
   }
 
   return (
-    <AdminBlock title="Subscription Status">
+    <AdminBlock title={i18n.translate('title')}>
       <BlockStack gap="base">
         <InlineStack blockAlignment="center" inlineAlignment="space-between">
-          <Text fontWeight="bold">Status</Text>
+          <Text fontWeight="bold">{i18n.translate('status')}</Text>
           <Badge tone="success">{contract.status}</Badge>
         </InlineStack>
         
@@ -101,7 +103,7 @@ function App() {
           </Text>
           
           <InlineStack inlineAlignment="space-between">
-            <Text>Next Billing:</Text>
+            <Text>{i18n.translate('next_billing')}</Text>
             <Text>
               {contract.nextBillingDate 
                 ? new Date(contract.nextBillingDate).toLocaleDateString() 
@@ -110,13 +112,13 @@ function App() {
           </InlineStack>
 
           <InlineStack inlineAlignment="space-between">
-             <Text size="small">Contract ID:</Text>
+             <Text size="small">{i18n.translate('contract_id')}</Text>
              <Text size="small">{contract.id.split('/').pop()}</Text>
           </InlineStack>
         </BlockStack>
 
         <Button onPress={() => console.log("Open App")}>
-          View in App
+          {i18n.translate('view_in_app')}
         </Button>
       </BlockStack>
     </AdminBlock>

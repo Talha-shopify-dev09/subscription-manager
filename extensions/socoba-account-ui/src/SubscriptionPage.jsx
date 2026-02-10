@@ -10,6 +10,7 @@ import {
   Divider,
   Badge,
   Button, // Import Button
+  useI18n // Import useI18n
 } from '@shopify/ui-extensions-react/customer-account';
 import { useEffect, useState } from 'react';
 
@@ -19,7 +20,8 @@ export default reactExtension(
 );
 
 function SubscriptionPage() {
-  const { query } = useApi();
+  const { query } = useApi(); // No i18n here
+  const i18n = useI18n(); // Get i18n correctly
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -62,19 +64,19 @@ function SubscriptionPage() {
     return (
       <BlockStack inlineAlignment="center" padding="extraLoose">
         <Spinner />
-        <Text>Loading your subscriptions...</Text>
+        <Text>{i18n.translate('loading')}</Text>
       </BlockStack>
     );
   }
 
   return (
     <BlockStack spacing="loose">
-      <Heading>Manage Subscriptions</Heading>
+      <Heading>{i18n.translate('title')}</Heading>
       <Divider />
 
       {contracts.length === 0 ? (
         <Card padding>
-          <Text>You don't have any active subscriptions at this time.</Text>
+          <Text>{i18n.translate('no_subscriptions')}</Text>
         </Card>
       ) : (
         contracts.map((contract) => (
@@ -86,7 +88,7 @@ function SubscriptionPage() {
                       {contract.lines.nodes[0]?.title || "Subscription Plan"}
                     </Text>
                     <InlineStack spacing="tight">
-                       <Text appearance="subdued">Status:</Text>
+                       <Text appearance="subdued">{i18n.translate('status')}</Text>
                        {/* Using 'success' if allowed, falling back to 'default' if strict */}
                        <Badge tone={contract.status === 'ACTIVE' ? 'success' : 'subdued'}>
                           {contract.status}
@@ -97,16 +99,16 @@ function SubscriptionPage() {
                  {/* --- CRITICAL ADDITION: The Manage Button --- */}
                  {/* This button takes the user to your App Proxy Portal to cancel/edit */}
                  <Button kind="secondary" to={PORTAL_URL}>
-                    Manage
+                    {i18n.translate('manage')}
                  </Button>
               </InlineStack>
 
               <BlockStack spacing="none">
                 <Text appearance="subdued">
-                  Next Billing: {contract.nextBillingDate ? new Date(contract.nextBillingDate).toLocaleDateString() : "N/A"}
+                  {i18n.translate('next_billing')} {contract.nextBillingDate ? new Date(contract.nextBillingDate).toLocaleDateString() : "N/A"}
                 </Text>
                 <Text size="small" appearance="subdued">
-                   Contract ID: {contract.id.split('/').pop()}
+                   {i18n.translate('contract_id')} {contract.id.split('/').pop()}
                 </Text>
               </BlockStack>
             </BlockStack>

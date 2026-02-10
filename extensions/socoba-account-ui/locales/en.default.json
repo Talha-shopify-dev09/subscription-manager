@@ -1,3 +1,10 @@
 {
-  "earnPoints": "You've earned 1,000 points from this order. You've been upgraded to Platinum tier."
+  "earnPoints": "You've earned 1,000 points from this order. You've been upgraded to Platinum tier.",
+  "loading": "Loading your subscriptions...",
+  "title": "Manage Subscriptions",
+  "no_subscriptions": "You don't have any active subscriptions at this time.",
+  "status": "Status:",
+  "manage": "Manage",
+  "next_billing": "Next Billing:",
+  "contract_id": "Contract ID:"
 }
