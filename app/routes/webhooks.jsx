@@ -136,11 +136,14 @@ export const action = async ({ request }) => {
     case "ORDERS_CREATE": {
       const { id: orderId, customer: customerData, total_price, currency, discount_applications } = payload;
       
+      console.log("ORDERS_CREATE Webhook Payload (discount_applications):", JSON.stringify(discount_applications, null, 2));
+
       try {
         const bundles = await db.bundle.findMany({
           where: { shop: shop, discountId: { not: null } },
           select: { id: true, title: true, discountId: true, price: true }
         });
+        console.log("Bundles from DB:", JSON.stringify(bundles, null, 2));
 
         const appliedBundleDiscount = discount_applications.find(
           (da) => da.type === "automatic" && bundles.some(b => b.discountId === da.shopify_discount_id)
@@ -161,7 +164,11 @@ export const action = async ({ request }) => {
               }
             });
             console.log(`🎁 Recorded bundle sale for Order ${orderId} (Bundle: ${matchedBundle.title})`);
+          } else {
+            console.log(`❌ No matching bundle found for applied automatic discount: ${appliedBundleDiscount.shopify_discount_id}`);
           }
+        } else {
+          console.log("❌ No relevant automatic bundle discount found in order.");
         }
       } catch (error) {
         console.error("❌ Error recording bundle sale:", error);
