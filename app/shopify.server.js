@@ -10,7 +10,7 @@ import prisma from "./db.server";
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
-  apiVersion: ApiVersion.April25, 
+  apiVersion: ApiVersion.April25,
   scopes: process.env.SCOPES?.split(","),
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
@@ -32,6 +32,8 @@ const shopify = shopifyApp({
     },
   },
   future: {
+    v3_authenticatePublic: true,
+    v3_lineItemBilling: true,
     expiringOfflineAccessTokens: true,
   },
 });
@@ -39,4 +41,10 @@ const shopify = shopifyApp({
 export default shopify;
 export const apiVersion = ApiVersion.April25;
 export const authenticate = shopify.authenticate;
+export const unauthenticated = shopify.unauthenticated;
+export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
+export const sessionStorage = shopify.sessionStorage;
+
+// FIX: This is the missing export causing the build error
+export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;

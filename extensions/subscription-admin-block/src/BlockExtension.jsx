@@ -7,50 +7,116 @@ import {
   Badge,
   InlineStack,
   Button,
+  Divider,
+  ProgressIndicator,
 } from '@shopify/ui-extensions-react/admin';
+import { useEffect, useState } from 'react';
 
-// Register the extension for the Order Details page
 export default reactExtension('admin.order-details.block.render', () => <App />);
 
 function App() {
-  // Use the hook to get API access
   const api = useApi();
-  
-  /**
-   * FIX for ts(2339):
-   * We access 'data' using bracket notation to bypass the strict type check
-   * that was causing your red line error.
-   */
-  const orderData = api['data']?.selected?.[0];
-  const orderId = orderData?.id;
+  const data = api['data'];
+  const query = api['query'];
 
-  // We can also try to look for line item data here if the API provides it
-  // In 2025-10, you might need to fetch this via the 'query' API if it's not in 'data'
-  const hasSubscription = false; // Placeholder for your logic
+  const [loading, setLoading] = useState(true);
+  const [contract, setContract] = useState(null);
+
+  const selectedOrder = data?.selected?.[0];
+  const orderId = selectedOrder?.id;
+
+  useEffect(() => {
+    if (!orderId) return;
+
+    const fetchSubscription = async () => {
+      try {
+        const result = await query(
+          `query getOrderSubscription($id: ID!) {
+            order(id: $id) {
+              customer {
+                subscriptionContracts(first: 1, status: ACTIVE) {
+                  nodes {
+                    id
+                    status
+                    nextBillingDate
+                    lines(first: 1) {
+                      nodes { title }
+                    }
+                  }
+                }
+              }
+            }
+          }`,
+          { variables: { id: orderId } }
+        );
+
+        const orderData = result?.data?.['order'];
+        const contracts = orderData?.customer?.subscriptionContracts?.nodes;
+        
+        if (contracts && contracts.length > 0) {
+          setContract(contracts[0]);
+        }
+      } catch (error) {
+        console.error("Error fetching subscription:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSubscription();
+  }, [orderId, query]);
+
+  if (loading) {
+    return (
+      <AdminBlock title="Subscription Status">
+        <BlockStack inlineAlignment="center">
+          {/* FIX: Added required 'size' prop */}
+          <ProgressIndicator size="small" />
+        </BlockStack>
+      </AdminBlock>
+    );
+  }
+
+  if (!contract) {
+    return (
+      <AdminBlock title="Subscription Status">
+        <Text>No active subscription found for this customer.</Text>
+      </AdminBlock>
+    );
+  }
 
   return (
-    <AdminBlock title="Socoba Subscription Status">
-      <BlockStack gap>
+    <AdminBlock title="Subscription Status">
+      <BlockStack gap="base">
         <InlineStack blockAlignment="center" inlineAlignment="space-between">
-          <Text fontWeight="bold">Status:</Text>
-          <Badge tone="success">Active</Badge>
+          <Text fontWeight="bold">Status</Text>
+          <Badge tone="success">{contract.status}</Badge>
         </InlineStack>
         
-        <BlockStack gap="small">
-          <Text >
-            Order: {orderId ? orderId.split('/').pop() : 'Loading...'}
+        <Divider />
+
+        <BlockStack gap="base">
+          <Text fontWeight="bold" size="large">
+            {contract.lines.nodes[0]?.title || "Subscription Plan"}
           </Text>
-          <Text>Plan: Monthly Sweater Bundle</Text>
-          <Text>Next Billing: Feb 28, 2026</Text>
+          
+          <InlineStack inlineAlignment="space-between">
+            <Text>Next Billing:</Text>
+            <Text>
+              {contract.nextBillingDate 
+                ? new Date(contract.nextBillingDate).toLocaleDateString() 
+                : "N/A"}
+            </Text>
+          </InlineStack>
+
+          <InlineStack inlineAlignment="space-between">
+             <Text size="small">Contract ID:</Text>
+             <Text size="small">{contract.id.split('/').pop()}</Text>
+          </InlineStack>
         </BlockStack>
 
-        <Button
-          onPress={() => {
-            console.log('Navigating for order:', orderId);
-            // Example: api.navigation.navigate(`extension:my-handle/my-target`);
-          }}
-        >
-          Manage Subscription
+        <Button onPress={() => console.log("Open App")}>
+          View in App
         </Button>
       </BlockStack>
     </AdminBlock>
