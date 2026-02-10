@@ -15,108 +15,109 @@
 
 {% if bundle_to_display != null %}
   <div class="{{ section_scope }} bundle-container" data-bundle-section>
-  
+    <p>DEBUG: Selected Bundle ID: {{ selected_bundle_id }}</p>
+    <p>DEBUG: All Bundles (raw): {{ all_bundles | json }}</p>
+    <p>DEBUG: Bundle to Display: {{ bundle_to_display.title }} ({{ bundle_to_display.id }})</p>
+    {% comment %} 
+      Determine the image: 
+      1. Use the image uploaded in Section Settings if available.
+      2. Fallback to the first product's featured image.
+    {% endcomment %}
+    {% assign custom_image = block.settings.custom_bundle_image %}
+    {% assign fallback_image = nil %}
+    
+    <section class="bundle-wrapper" aria-labelledby="bundle-title-{{ section.id }}-{{ bundle_to_display.id }}">
       
-      {% comment %} 
-        Determine the image: 
-        1. Use the image uploaded in Section Settings if available.
-        2. Fallback to the first product's featured image.
-      {% endcomment %}
-      {% assign custom_image = block.settings.custom_bundle_image %}
-      {% assign fallback_image = nil %}
-      
-      <section class="bundle-wrapper" aria-labelledby="bundle-title-{{ section.id }}-{{ bundle_to_display.id }}">
-        
-        <div class="bundle-content-column">
-          <header class="bundle-header">
-            <h2 id="bundle-title-{{ section.id }}-{{ bundle_to_display.id }}" class="bundle-title">
-              {{ bundle_to_display.title }}
-            </h2>
-          </header>
+      <div class="bundle-content-column">
+        <header class="bundle-header">
+          <h2 id="bundle-title-{{ section.id }}-{{ bundle_to_display.id }}" class="bundle-title">
+            {{ bundle_to_display.title }}
+          </h2>
+        </header>
 
-          <div class="bundle-list" role="list">
-            {% for product_info in bundle_to_display.products %}
-              {% assign prod = all_products[product_info.handle] %}
-              {% if prod != empty %}
-                {% assign target_price_cents = product_info.bundlePrice | times: 100 | round %}
-                
-                {% if forloop.first %}
-                  {% assign fallback_image = prod.featured_image %}
-                {% endif %}
+        <div class="bundle-list" role="list">
+          {% for product_info in bundle_to_display.products %}
+            {% assign prod = all_products[product_info.handle] %}
+            {% if prod != empty %}
+              {% assign target_price_cents = product_info.bundlePrice | times: 100 | round %}
+              
+              {% if forloop.first %}
+                {% assign fallback_image = prod.featured_image %}
+              {% endif %}
 
-                <div class="bundle-list-item" role="listitem">
-                  <div class="item-details">
-                    <h3 class="product-title">{{ prod.title }}</h3>
-                    <div class="item-meta">
-                       {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle_to_display.id | append: '-' | append: prod.id %}
-                       <div class="variant-wrapper">
-                         <select
-                           id="{{ select_id }}"
-                           class="bundle-variant-select"
-                           data-bundle-id="{{ bundle_to_display.id }}"
-                           data-product-handle="{{ product_info.handle }}"
-                           data-target-price-cents="{{ target_price_cents }}"
-                         >
-                           {% for variant in prod.variants %}
-                             <option
-                               value="{{ variant.id }}"
-                               data-variant-price-cents="{{ variant.price }}"
-                               {% if variant.available == false %}disabled{% endif %}
-                             >
-                               {{ variant.title }}{% unless variant.available %} (Sold out){% endunless %}
-                             </option>
-                           {% endfor %}
-                         </select>
-                       </div>
-                    </div>
-                  </div>
-
-                  <div class="item-pricing">
-                    <div class="price-stack">
-                      <span class="original-price">{{ prod.price | money }}</span>
-                      <span class="bundle-price-text">{{ target_price_cents | money }}</span>
-                    </div>
+              <div class="bundle-list-item" role="listitem">
+                <div class="item-details">
+                  <h3 class="product-title">{{ prod.title }}</h3>
+                  <div class="item-meta">
+                     {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle_to_display.id | append: '-' | append: prod.id %}
+                     <div class="variant-wrapper">
+                       <select
+                         id="{{ select_id }}"
+                         class="bundle-variant-select"
+                         data-bundle-id="{{ bundle_to_display.id }}"
+                         data-product-handle="{{ product_info.handle }}"
+                         data-target-price-cents="{{ target_price_cents }}"
+                       >
+                         {% for variant in prod.variants %}
+                           <option
+                             value="{{ variant.id }}"
+                             data-variant-price-cents="{{ variant.price }}"
+                             {% if variant.available == false %}disabled{% endif %}
+                           >
+                             {{ variant.title }}{% unless variant.available %} (Sold out){% endunless %}
+                           </option>
+                         {% endfor %}
+                       </select>
+                     </div>
                   </div>
                 </div>
-              {% endif %}
-            {% endfor %}
-          </div>
 
-          <footer class="bundle-footer">
-            <div class="total-row">
-              <span class="total-label">TOTAL</span>
-              <div class="total-values">
-                 <span class="bundle-savings-tag" data-bundle-savings-row hidden>
-                    Save <span data-bundle-savings></span>
-                 </span>
-                <span class="final-price" data-bundle-total>{{ currency_symbol }}{{ bundle_to_display.price }}</span>
+                <div class="item-pricing">
+                  <div class="price-stack">
+                    <span class="original-price">{{ prod.price | money }}</span>
+                    <span class="bundle-price-text">{{ target_price_cents | money }}</span>
+                  </div>
+                </div>
               </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+
+        <footer class="bundle-footer">
+          <div class="total-row">
+            <span class="total-label">TOTAL</span>
+            <div class="total-values">
+               <span class="bundle-savings-tag" data-bundle-savings-row hidden>
+                  Save <span data-bundle-savings></span>
+               </span>
+              <span class="final-price" data-bundle-total>{{ currency_symbol }}{{ bundle_to_display.price }}</span>
             </div>
-
-            <button
-              type="button"
-              class="add-bundle-btn"
-              data-add-bundle
-              data-bundle-id="{{ bundle_to_display.id }}"
-            >
-              Buy Now
-            </button>
-          </footer>
-        </div>
-
-        <div class="bundle-image-column">
-          <div class="hero-image-wrapper">
-             {% if custom_image != blank %}
-                <img src="{{ custom_image | image_url: width: 1200 }}" alt="{{ bundle_to_display.title | escape }}" loading="lazy">
-             {% elsif fallback_image != blank %}
-                <img src="{{ fallback_image | image_url: width: 1200 }}" alt="{{ bundle_to_display.title | escape }}" loading="lazy">
-             {% else %}
-                <div class="image-fallback"></div>
-             {% endif %}
           </div>
-        </div>
 
-      </section>
+          <button
+            type="button"
+            class="add-bundle-btn"
+            data-add-bundle
+            data-bundle-id="{{ bundle_to_display.id }}"
+          >
+            Buy Now
+          </button>
+        </footer>
+      </div>
+
+      <div class="bundle-image-column">
+        <div class="hero-image-wrapper">
+           {% if custom_image != blank %}
+              <img src="{{ custom_image | image_url: width: 1200 }}" alt="{{ bundle_to_display.title | escape }}" loading="lazy">
+           {% elsif fallback_image != blank %}
+              <img src="{{ fallback_image | image_url: width: 1200 }}" alt="{{ bundle_to_display.title | escape }}" loading="lazy">
+           {% else %}
+              <div class="image-fallback"></div>
+           {% endif %}
+        </div>
+      </div>
+
+    </section>
   </div>
 
   <style>
@@ -336,25 +337,10 @@
       });
     })();
   </script>
+{% else %}
+  <div class="bundle-placeholder">
+    <p>DEBUG: No bundle found with ID: {{ selected_bundle_id }}</p>
+    <p>DEBUG: All Bundles (raw): {{ all_bundles | json }}</p>
+    <p>No bundles configured or selected.</p>
+  </div>
 {% endif %}
-
-{% schema %}
-{
-  "name": "Family Bundle Block",
-  "target": "section",
-  "settings": [
-    {
-      "type": "image_picker",
-      "id": "custom_bundle_image",
-      "label": "Custom Bundle Image",
-      "info": "If left blank, the first product image will be used."
-    },
-    {
-      "type": "text",
-      "id": "selected_bundle_id",
-      "label": "Bundle ID to Display",
-      "info": "Enter the unique ID of the bundle you want to show."
-    }
-  ]
-}
-{% endschema %}
