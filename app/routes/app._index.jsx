@@ -172,7 +172,7 @@ export default function Index() {
                       </InlineGrid>
                   </BlockStack>
               </Card>
-            </Layout.section>
+            </Layout.Section>
 
             {/* --- NAVIGATION CARDS --- */}
             <Layout.Section>
