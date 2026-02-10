@@ -2,6 +2,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
 export const action = async ({ request }) => {
+  console.log("Webhook action function hit!"); // Added for debugging
   // 1. Authenticate the webhook request
   // We include 'admin' here to allow GraphQL queries inside the webhook logic
   const { topic, shop, payload, session, admin } = await authenticate.webhook(request);
