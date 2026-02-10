@@ -12,6 +12,7 @@ export const action = async ({ request }) => {
     // --- 2. HANDLE NEW SUBSCRIPTION CONTRACTS ---
     case "SUBSCRIPTION_CONTRACTS_CREATE": {
       const { id, status, nextBillingDate, customer, currencyCode, lines } = payload;
+      const contractId = String(id);
       
       // Webhooks provide 'lines' as a direct array
       const productGid = lines?.[0]?.productId; 
@@ -54,13 +55,13 @@ export const action = async ({ request }) => {
 
         // C. Save or Update the contract in your database
         await db.contract.upsert({
-          where: { id: id },
+          where: { id: contractId },
           update: {
             status: status.toUpperCase(), 
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
           },
           create: {
-            id: id,
+            id: contractId,
             shop: shop,
             customerId: customer?.id,
             customerName: `${customer?.firstName || ""} ${customer?.lastName || ""}`.trim(),
@@ -72,7 +73,7 @@ export const action = async ({ request }) => {
           },
         });
 
-        console.log(`✅ Saved Contract ${id} (Linked Plan: ${localPlan ? localPlan.targetTitle : 'None'})`);
+        console.log(`✅ Saved Contract ${contractId} (Linked Plan: ${localPlan ? localPlan.targetTitle : 'None'})`);
       } catch (error) {
         console.error("❌ Error saving contract:", error);
       }
@@ -82,9 +83,10 @@ export const action = async ({ request }) => {
     // --- 3. HANDLE SUBSCRIPTION UPDATES ---
     case "SUBSCRIPTION_CONTRACTS_UPDATE": {
       const { id, status, nextBillingDate } = payload;
+      const contractId = String(id);
       try {
         await db.contract.update({
-          where: { id: id },
+          where: { id: contractId },
           data: {
             status: status.toUpperCase(),
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
