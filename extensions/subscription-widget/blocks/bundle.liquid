@@ -344,3 +344,24 @@
     <p>No bundles configured or selected.</p>
   </div>
 {% endif %}
+
+{% schema %}
+{
+  "name": "Family Bundle Block",
+  "target": "section",
+  "settings": [
+    {
+      "type": "image_picker",
+      "id": "custom_bundle_image",
+      "label": "Custom Bundle Image",
+      "info": "If left blank, the first product image will be used."
+    },
+    {
+      "type": "text",
+      "id": "selected_bundle_id",
+      "label": "Bundle ID to Display",
+      "info": "Enter the unique ID of the bundle you want to show."
+    }
+  ]
+}
+{% endschema %}
