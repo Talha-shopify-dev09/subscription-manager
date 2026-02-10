@@ -98,6 +98,7 @@ model Contract {
   customerEmail   String?
   status          ContractStatus @default(ACTIVE)
   nextBillingDate DateTime?
+  recurringPrice  Decimal?       // Price for each recurring payment
   currencyCode    String         @default("USD")
   
   // Explicit Relations
@@ -107,9 +108,27 @@ model Contract {
   bundleId        String?
   bundle          Bundle?        @relation(fields: [bundleId], references: [id])
   
+  transactions    Transaction[]  // Relation to successful transactions
+  
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
   @@index([shop])
   @@index([status])
+}
+
+// --- TRANSACTION MODEL ---
+model Transaction {
+  id           String   @id @default(uuid())
+  shop         String
+  contractId   String
+  contract     Contract @relation(fields: [contractId], references: [id])
+  amount       Decimal
+  currencyCode String
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@index([shop])
+  @@index([contractId])
 }

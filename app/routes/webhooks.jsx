@@ -14,16 +14,14 @@ export const action = async ({ request }) => {
       const { id, status, nextBillingDate, customer, currencyCode, lines } = payload;
       const contractId = String(id);
       
-      // Webhooks provide 'lines' as a direct array
       const productGid = lines?.[0]?.productId; 
+      const recurringPrice = payload.lines.nodes[0]?.pricingPolicy?.price?.amount;
 
       try {
-        // A. Try to find a direct Product Subscription match
         let localPlan = await db.subscription.findFirst({
           where: { targetId: productGid, shop: shop }
         });
 
-        // B. IMPROVEMENT: If no direct product plan, check for Collection-based plans
         if (!localPlan && admin && productGid) {
           console.log(`🔍 No direct product plan. Checking collections for: ${productGid}`);
           
@@ -53,12 +51,12 @@ export const action = async ({ request }) => {
           }
         }
 
-        // C. Save or Update the contract in your database
         await db.contract.upsert({
           where: { id: contractId },
           update: {
             status: status.toUpperCase(), 
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
+            recurringPrice: recurringPrice,
           },
           create: {
             id: contractId,
@@ -68,8 +66,9 @@ export const action = async ({ request }) => {
             customerEmail: customer?.email,
             status: status.toUpperCase(),
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
+            recurringPrice: recurringPrice,
             currencyCode: currencyCode || "USD",
-            planId: localPlan?.id, // Successfully links to Product OR Collection plans
+            planId: localPlan?.id,
           },
         });
 
@@ -84,12 +83,14 @@ export const action = async ({ request }) => {
     case "SUBSCRIPTION_CONTRACTS_UPDATE": {
       const { id, status, nextBillingDate } = payload;
       const contractId = String(id);
+      const recurringPrice = payload.lines?.nodes[0]?.pricingPolicy?.price?.amount;
       try {
         await db.contract.update({
           where: { id: contractId },
           data: {
             status: status.toUpperCase(),
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
+            recurringPrice: recurringPrice,
           },
         });
         console.log(`🔄 Updated Contract ${id} to ${status}`);
@@ -99,7 +100,38 @@ export const action = async ({ request }) => {
       break;
     }
 
-    // --- 4. APP UNINSTALL CLEANUP ---
+    // --- 4. HANDLE SUCCESSFUL BILLING ATTEMPTS ---
+    case "SUBSCRIPTION_BILLING_ATTEMPTS_SUCCESS": {
+      const { subscriptionContractId, completedOrder } = payload;
+      if (!subscriptionContractId || !completedOrder) {
+        console.warn("Received SUBSCRIPTION_BILLING_ATTEMPTS_SUCCESS with missing data.");
+        break;
+      }
+      
+      const amount = completedOrder.totalPriceSet.shopMoney.amount;
+      const currency = completedOrder.totalPriceSet.shopMoney.currencyCode;
+
+      try {
+        await db.transaction.create({
+          data: {
+            shop: shop,
+            contractId: String(subscriptionContractId),
+            amount: parseFloat(amount),
+            currencyCode: currency
+          }
+        });
+        console.log(`💰 Recorded transaction of ${amount} ${currency} for contract ${subscriptionContractId}`);
+      } catch (error) {
+        console.error("❌ Error recording transaction:", error);
+
+        if (error.code === 'P2003') { // Foreign key constraint failed
+          console.error(`  Contract with ID ${subscriptionContractId} not found in the database. A contract must exist before a transaction can be recorded.`);
+        }
+      }
+      break;
+    }
+
+    // --- 5. APP UNINSTALL CLEANUP ---
     case "APP_UNINSTALLED": {
       if (session) {
         // Clean up all shop data to comply with Shopify requirements

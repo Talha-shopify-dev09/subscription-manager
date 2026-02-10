@@ -20,21 +20,19 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
   try {
-    const [activeCount, pausedCount, cancelledCount, bundlePurchaseCount, bundleContracts] = await Promise.all([
-      db.contract.count({ where: { shop: session.shop, status: "ACTIVE", planId: { not: null } } }),
+    const [activeContracts, pausedCount, cancelledCount, bundlePurchaseCount, bundleContracts, allTransactions] = await Promise.all([
+      db.contract.findMany({ where: { shop: session.shop, status: "ACTIVE", planId: { not: null } } }),
       db.contract.count({ where: { shop: session.shop, status: "PAUSED", planId: { not: null } } }),
       db.contract.count({ where: { shop: session.shop, status: "CANCELLED", planId: { not: null } } }),
-      db.contract.count({ where: { shop: session.shop, bundleId: { not: null } } }), // Count bundle purchases
-      db.contract.findMany({ // Fetch bundle contracts to sum prices
-        where: {
-          shop: session.shop,
-          bundleId: { not: null }
-        },
-        include: {
-          bundle: true // Include the related Bundle model
-        }
-      })
+      db.contract.count({ where: { shop: session.shop, bundleId: { not: null } } }),
+      db.contract.findMany({
+        where: { shop: session.shop, bundleId: { not: null } },
+        include: { bundle: true }
+      }),
+      db.transaction.findMany({ where: { shop: session.shop } })
     ]);
+
+    const activeCount = activeContracts.length;
 
     let totalBundleAmount = 0;
     bundleContracts.forEach(contract => {
@@ -43,28 +41,52 @@ export const loader = async ({ request }) => {
       }
     });
 
-    console.log("Shop:", session.shop);
-    console.log("Active Count:", activeCount);
-    console.log("Paused Count:", pausedCount);
-    console.log("Cancelled Count:", cancelledCount);
-    console.log("Bundle Purchase Count:", bundlePurchaseCount);
-    console.log("Total Bundle Amount:", totalBundleAmount);
+    let totalActiveSubscriptionAmount = 0;
+    activeContracts.forEach(contract => {
+      if (contract.recurringPrice) {
+        totalActiveSubscriptionAmount += parseFloat(contract.recurringPrice);
+      }
+    });
 
-    return Response.json({ activeCount, pausedCount, cancelledCount, bundlePurchaseCount, totalBundleAmount });
+    let totalSubscriptionEarnings = 0;
+    allTransactions.forEach(transaction => {
+      totalSubscriptionEarnings += parseFloat(transaction.amount);
+    });
+
+    return Response.json({
+      activeCount,
+      pausedCount,
+      cancelledCount,
+      bundlePurchaseCount,
+      totalBundleAmount,
+      totalActiveSubscriptionAmount,
+      totalSubscriptionEarnings
+    });
   } catch (error) {
     console.error("Dashboard Loader Error:", error);
-    return Response.json({ activeCount: 0, pausedCount: 0, cancelledCount: 0, bundlePurchaseCount: 0, totalBundleAmount: 0 });
+    return Response.json({
+      activeCount: 0, pausedCount: 0, cancelledCount: 0, bundlePurchaseCount: 0,
+      totalBundleAmount: 0, totalActiveSubscriptionAmount: 0, totalSubscriptionEarnings: 0
+    });
   }
 };
 
 // --- COMPONENT ---
 export default function Index() {
-  const { activeCount, cancelledCount, pausedCount, bundlePurchaseCount, totalBundleAmount } = useLoaderData();
+  const {
+    activeCount,
+    cancelledCount,
+    pausedCount,
+    bundlePurchaseCount,
+    totalBundleAmount,
+    totalActiveSubscriptionAmount,
+    totalSubscriptionEarnings
+  } = useLoaderData();
 
-  const formattedTotalBundleAmount = new Intl.NumberFormat('en-US', {
+  const formatCurrency = (amount) => new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD', // Assuming USD. Adjust if necessary.
-  }).format(totalBundleAmount);
+  }).format(amount);
 
   return (
     <AppProvider i18n={enTranslations}>
@@ -77,7 +99,7 @@ export default function Index() {
               <Card>
                   <BlockStack gap="200">
                       <Text as="h2" variant="headingSm">Performance Overview</Text>
-                      <InlineGrid columns={5} gap="400">
+                      <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 4 }} gap="400">
                           {/* Active Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                             <BlockStack gap="200">
@@ -88,26 +110,26 @@ export default function Index() {
                             </BlockStack>
                           </Box>
 
-                          {/* Cancelled Card */}
+                          {/* Active Subscription Value Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                             <BlockStack gap="200">
-                                <Text as="h3" variant="headingXs" tone="subdued">Cancelled Subs</Text>
-                                <Text as="p" variant="headingXl" fontWeight="bold" tone="critical">
-                                  {cancelledCount}
+                                <Text as="h3" variant="headingXs" tone="subdued">Active Sub Value</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold" tone="success">
+                                  {formatCurrency(totalActiveSubscriptionAmount)}
                                 </Text>
                             </BlockStack>
                           </Box>
 
-                          {/* Paused Card */}
+                          {/* Total Subscription Earnings Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                             <BlockStack gap="200">
-                                <Text as="h3" variant="headingXs" tone="subdued">Paused Subs</Text>
-                                <Text as="p" variant="headingXl" fontWeight="bold" tone="caution">
-                                  {pausedCount}
+                                <Text as="h3" variant="headingXs" tone="subdued">Total Sub Earnings</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold">
+                                  {formatCurrency(totalSubscriptionEarnings)}
                                 </Text>
                             </BlockStack>
                           </Box>
-
+                          
                           {/* Total Bundles Purchased Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                             <BlockStack gap="200">
@@ -123,14 +145,34 @@ export default function Index() {
                             <BlockStack gap="200">
                                 <Text as="h3" variant="headingXs" tone="subdued">Bundle Sales</Text>
                                 <Text as="p" variant="headingXl" fontWeight="bold">
-                                  {formattedTotalBundleAmount}
+                                  {formatCurrency(totalBundleAmount)}
+                                </Text>
+                            </BlockStack>
+                          </Box>
+
+                          {/* Paused Card */}
+                          <Box background="bg-surface-secondary" padding="400" borderRadius="200">
+                            <BlockStack gap="200">
+                                <Text as="h3" variant="headingXs" tone="subdued">Paused Subs</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold" tone="caution">
+                                  {pausedCount}
+                                </Text>
+                            </BlockStack>
+                          </Box>
+
+                          {/* Cancelled Card */}
+                          <Box background="bg-surface-secondary" padding="400" borderRadius="200">
+                            <BlockStack gap="200">
+                                <Text as="h3" variant="headingXs" tone="subdued">Cancelled Subs</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold" tone="critical">
+                                  {cancelledCount}
                                 </Text>
                             </BlockStack>
                           </Box>
                       </InlineGrid>
                   </BlockStack>
               </Card>
-            </Layout.Section>
+            </Layout.section>
 
             {/* --- NAVIGATION CARDS --- */}
             <Layout.Section>
