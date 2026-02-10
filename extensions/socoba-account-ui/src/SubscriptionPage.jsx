@@ -21,9 +21,10 @@ export default reactExtension(
 
 function SubscriptionPage() {
   const { query } = useApi(); // No i18n here
-  const i18n = useI18n(); // Get i18n correctly
+  const i18n = useI18n();
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null); // New error state
 
   // This is the bridge to your App Proxy (where the Cancel logic lives)
   const PORTAL_URL = "/apps/subscription-manager/portal";
@@ -32,7 +33,7 @@ function SubscriptionPage() {
     query(`
       query {
         customer {
-          subscriptionContracts(first: 10) {
+          subscriptionContracts(first: 50) {
             nodes {
               id
               status
@@ -50,16 +51,30 @@ function SubscriptionPage() {
     `)
     .then((result) => {
       console.log("Storefront API Query Result:", JSON.stringify(result, null, 2));
+      
+      if (result.errors && result.errors.length > 0) {
+        setError(result.errors[0].message);
+        setLoading(false);
+        return;
+      }
+
       const customerData = result?.data?.customer;
-      const fetchedNodes = customerData?.subscriptionContracts?.nodes || [];
+      if (!customerData || !customerData.subscriptionContracts) {
+        setError(i18n.translate('no_customer_data_or_contracts')); // New error message
+        setLoading(false);
+        return;
+      }
+      
+      const fetchedNodes = customerData.subscriptionContracts.nodes || [];
       setContracts(fetchedNodes);
       setLoading(false);
     })
     .catch((err) => {
       console.error("Storefront API Error:", err);
+      setError(i18n.translate('error_fetching_subscriptions')); // General error message
       setLoading(false);
     });
-  }, [query]);
+  }, [query, i18n]);
 
   if (loading) {
     return (
@@ -67,6 +82,14 @@ function SubscriptionPage() {
         <Spinner />
         <Text>{i18n.translate('loading')}</Text>
       </BlockStack>
+    );
+  }
+
+  if (error) { // Display error message if present
+    return (
+      <Card padding>
+        <Text tone="critical">{error}</Text>
+      </Card>
     );
   }
 

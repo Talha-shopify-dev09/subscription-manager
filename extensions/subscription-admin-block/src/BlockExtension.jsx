@@ -9,7 +9,7 @@ import {
   Button,
   Divider,
   ProgressIndicator,
-  useI18n // Import useI18n
+
 } from '@shopify/ui-extensions-react/admin';
 import { useEffect, useState } from 'react';
 
@@ -17,7 +17,7 @@ export default reactExtension('admin.order-details.block.render', () => <App />)
 
 function App() {
   const api = useApi();
-  const i18n = useI18n(); // Correctly obtain i18n
+
   const data = api['data'];
   const query = api['query'];
 
@@ -70,7 +70,7 @@ function App() {
 
   if (loading) {
     return (
-      <AdminBlock title={i18n.translate('title')}>
+      <AdminBlock title="Subscription Status">
         <BlockStack inlineAlignment="center">
           {/* FIX: Added required 'size' prop */}
           <ProgressIndicator size="small" />
@@ -81,8 +81,8 @@ function App() {
 
   if (!contract) {
     return (
-      <AdminBlock title={i18n.translate('title')}>
-        <Text>{i18n.translate('no_subscription')}</Text>
+      <AdminBlock title="Subscription Status">
+        <Text>No active subscription found for this customer.</Text>
       </AdminBlock>
     );
   }
@@ -91,7 +91,7 @@ function App() {
     <AdminBlock title={i18n.translate('title')}>
       <BlockStack gap="base">
         <InlineStack blockAlignment="center" inlineAlignment="space-between">
-          <Text fontWeight="bold">{i18n.translate('status')}</Text>
+          <Text fontWeight="bold">Status</Text>
           <Badge tone="success">{contract.status}</Badge>
         </InlineStack>
         

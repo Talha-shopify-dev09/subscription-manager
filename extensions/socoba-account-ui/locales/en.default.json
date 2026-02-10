@@ -6,5 +6,7 @@
   "status": "Status:",
   "manage": "Manage",
   "next_billing": "Next Billing:",
-  "contract_id": "Contract ID:"
+  "contract_id": "Contract ID:",
+  "no_customer_data_or_contracts": "Could not retrieve customer data or subscription contracts. Please try again later.",
+  "error_fetching_subscriptions": "An error occurred while fetching your subscriptions. Please try again later."
 }
