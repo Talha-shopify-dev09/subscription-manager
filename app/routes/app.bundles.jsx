@@ -319,9 +319,10 @@ export default function BundlePage() {
             </Layout.Section>
             <Layout.Section>
                 <Card padding="0">
-                    <IndexTable resourceName={{ singular: 'bundle', plural: 'bundles' }} itemCount={bundles.length} headings={[{ title: 'Title' }, { title: 'Price' }, { title: 'Action' }]}>
+                    <IndexTable resourceName={{ singular: 'bundle', plural: 'bundles' }} itemCount={bundles.length} headings={[{ title: 'ID' }, { title: 'Title' }, { title: 'Price' }, { title: 'Action' }]}>
                     {bundles.map((bundle, index) => (
                         <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>
+                        <IndexTable.Cell>{bundle.id}</IndexTable.Cell>
                         <IndexTable.Cell><Text fontWeight="bold">{bundle.title}</Text></IndexTable.Cell>
                         <IndexTable.Cell>{currencySymbol}{bundle.price}</IndexTable.Cell>
                         <IndexTable.Cell><Button tone="critical" onClick={() => handleDelete(bundle.id)}>Delete</Button></IndexTable.Cell>
