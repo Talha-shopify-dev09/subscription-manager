@@ -30,51 +30,64 @@ function SubscriptionPage() {
   const PORTAL_URL = "/apps/subscription-manager/portal";
 
   useEffect(() => {
-    query(`
-      query {
-        customer {
-          subscriptionContracts(first: 50) {
-            nodes {
-              id
-              status
-              nextBillingDate
-              lines(first: 5) {
-                nodes {
-                  title
-                  quantity
+    const getSubscriptions = async () => {
+      try {
+        const response = await fetch("shopify://customer-account/api/unstable/graphql.json", {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: `
+              query {
+                customer {
+                  subscriptionContracts(first: 50) {
+                    nodes {
+                      id
+                      status
+                      nextBillingDate
+                      lines(first: 5) {
+                        nodes {
+                          title
+                          quantity
+                        }
+                      }
+                    }
+                  }
                 }
               }
-            }
-          }
-        }
-      }
-    `)
-    .then((result) => {
-      console.log("Storefront API Query Result:", JSON.stringify(result, null, 2));
-      
-      if (result.errors && result.errors.length > 0) {
-        setError(result.errors[0].message);
-        setLoading(false);
-        return;
-      }
+            `,
+          }),
+        });
 
-      const customerData = result?.data?.customer;
-      if (!customerData || !customerData.subscriptionContracts) {
-        setError(i18n.translate('no_customer_data_or_contracts')); // New error message
+        const result = await response.json();
+        console.log("Customer Account GraphQL Result:", JSON.stringify(result, null, 2));
+        
+        if (result.errors && result.errors.length > 0) {
+          setError(result.errors[0].message);
+          setLoading(false);
+          return;
+        }
+
+        const customerData = result?.data?.customer;
+        if (!customerData || !customerData.subscriptionContracts) {
+          setError(i18n.translate('no_customer_data_or_contracts'));
+          setLoading(false);
+          return;
+        }
+        
+        const fetchedNodes = customerData.subscriptionContracts.nodes || [];
+        setContracts(fetchedNodes);
         setLoading(false);
-        return;
+      } catch (err) {
+        console.error("Fetch Error:", err);
+        setError(i18n.translate('error_fetching_subscriptions'));
+        setLoading(false);
       }
-      
-      const fetchedNodes = customerData.subscriptionContracts.nodes || [];
-      setContracts(fetchedNodes);
-      setLoading(false);
-    })
-    .catch((err) => {
-      console.error("Storefront API Error:", err);
-      setError(i18n.translate('error_fetching_subscriptions')); // General error message
-      setLoading(false);
-    });
-  }, [query, i18n]);
+    };
+
+    getSubscriptions();
+  }, [i18n]); // Removed 'query' from dependencies since we're no longer using useApi().query
 
   if (loading) {
     return (

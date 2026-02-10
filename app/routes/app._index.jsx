@@ -20,31 +20,51 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
   try {
-    // 2. Query Prisma for subscription counts scoped to the current shop
-    // We use uppercase strings to match the Prisma Enum exactly
-    const [activeCount, pausedCount, cancelledCount] = await Promise.all([
-      db.contract.count({ where: { shop: session.shop, status: "ACTIVE" } }),
-      db.contract.count({ where: { shop: session.shop, status: "PAUSED" } }),
-      db.contract.count({ where: { shop: session.shop, status: "CANCELLED" } }),
+    const [activeCount, pausedCount, cancelledCount, bundlePurchaseCount, bundleContracts] = await Promise.all([
+      db.contract.count({ where: { shop: session.shop, status: "ACTIVE", planId: { not: null } } }),
+      db.contract.count({ where: { shop: session.shop, status: "PAUSED", planId: { not: null } } }),
+      db.contract.count({ where: { shop: session.shop, status: "CANCELLED", planId: { not: null } } }),
+      db.contract.count({ where: { shop: session.shop, bundleId: { not: null } } }), // Count bundle purchases
+      db.contract.findMany({ // Fetch bundle contracts to sum prices
+        where: {
+          shop: session.shop,
+          bundleId: { not: null }
+        },
+        include: {
+          bundle: true // Include the related Bundle model
+        }
+      })
     ]);
+
+    let totalBundleAmount = 0;
+    bundleContracts.forEach(contract => {
+      if (contract.bundle && contract.bundle.price) {
+        totalBundleAmount += parseFloat(contract.bundle.price);
+      }
+    });
 
     console.log("Shop:", session.shop);
     console.log("Active Count:", activeCount);
     console.log("Paused Count:", pausedCount);
     console.log("Cancelled Count:", cancelledCount);
+    console.log("Bundle Purchase Count:", bundlePurchaseCount);
+    console.log("Total Bundle Amount:", totalBundleAmount);
 
-    // 3. Return counts as a JSON response
-    return Response.json({ activeCount, pausedCount, cancelledCount });
+    return Response.json({ activeCount, pausedCount, cancelledCount, bundlePurchaseCount, totalBundleAmount });
   } catch (error) {
     console.error("Dashboard Loader Error:", error);
-    // Fallback to zero if the database query fails
-    return Response.json({ activeCount: 0, pausedCount: 0, cancelledCount: 0 });
+    return Response.json({ activeCount: 0, pausedCount: 0, cancelledCount: 0, bundlePurchaseCount: 0, totalBundleAmount: 0 });
   }
 };
 
 // --- COMPONENT ---
 export default function Index() {
-  const { activeCount, cancelledCount, pausedCount } = useLoaderData();
+  const { activeCount, cancelledCount, pausedCount, bundlePurchaseCount, totalBundleAmount } = useLoaderData();
+
+  const formattedTotalBundleAmount = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD', // Assuming USD. Adjust if necessary.
+  }).format(totalBundleAmount);
 
   return (
     <AppProvider i18n={enTranslations}>
@@ -56,12 +76,12 @@ export default function Index() {
             <Layout.Section>
               <Card>
                   <BlockStack gap="200">
-                      <Text as="h2" variant="headingSm">Subscription Performance</Text>
-                      <InlineGrid columns={3} gap="400">
+                      <Text as="h2" variant="headingSm">Performance Overview</Text>
+                      <InlineGrid columns={5} gap="400">
                           {/* Active Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                             <BlockStack gap="200">
-                                <Text as="h3" variant="headingXs" tone="subdued">Active Subscribers</Text>
+                                <Text as="h3" variant="headingXs" tone="subdued">Active Subs</Text>
                                 <Text as="p" variant="headingXl" fontWeight="bold" tone="success">
                                   {activeCount}
                                 </Text>
@@ -71,7 +91,7 @@ export default function Index() {
                           {/* Cancelled Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                             <BlockStack gap="200">
-                                <Text as="h3" variant="headingXs" tone="subdued">Cancelled</Text>
+                                <Text as="h3" variant="headingXs" tone="subdued">Cancelled Subs</Text>
                                 <Text as="p" variant="headingXl" fontWeight="bold" tone="critical">
                                   {cancelledCount}
                                 </Text>
@@ -81,9 +101,29 @@ export default function Index() {
                           {/* Paused Card */}
                           <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                             <BlockStack gap="200">
-                                <Text as="h3" variant="headingXs" tone="subdued">Paused</Text>
+                                <Text as="h3" variant="headingXs" tone="subdued">Paused Subs</Text>
                                 <Text as="p" variant="headingXl" fontWeight="bold" tone="caution">
                                   {pausedCount}
+                                </Text>
+                            </BlockStack>
+                          </Box>
+
+                          {/* Total Bundles Purchased Card */}
+                          <Box background="bg-surface-secondary" padding="400" borderRadius="200">
+                            <BlockStack gap="200">
+                                <Text as="h3" variant="headingXs" tone="subdued">Bundles Purchased</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold">
+                                  {bundlePurchaseCount}
+                                </Text>
+                            </BlockStack>
+                          </Box>
+
+                          {/* Total Bundle Sales Card */}
+                          <Box background="bg-surface-secondary" padding="400" borderRadius="200">
+                            <BlockStack gap="200">
+                                <Text as="h3" variant="headingXs" tone="subdued">Bundle Sales</Text>
+                                <Text as="p" variant="headingXl" fontWeight="bold">
+                                  {formattedTotalBundleAmount}
                                 </Text>
                             </BlockStack>
                           </Box>
