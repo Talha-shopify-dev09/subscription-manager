@@ -224,7 +224,7 @@ export function ErrorBoundary() {
 }
 
 
-import { useNavigation } from "react-router-dom";
+import { useNavigation } from "react-router";
 
 export default function Subscriptions() {
   const { subscriptions, products, collections } = useLoaderData();
