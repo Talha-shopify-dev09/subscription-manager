@@ -16,15 +16,34 @@ export const action = async ({ request }) => {
   switch (topic) {
     // --- 2. HANDLE NEW SUBSCRIPTION CONTRACTS ---
     case "SUBSCRIPTION_CONTRACTS_CREATE": {
-      const { id, status, nextBillingDate, customer, currencyCode, lines } = payload;
-            const contractId = String(id);
-            
-            const productGid = lines?.[0]?.productId; 
-            const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
-      
-            // Attempt to get customerId from payload; if not present, customerEmail will remain null
-            const customerId = customer?.id;
-            let customerEmail = null;
+      const { id, status, nextBillingDate, customer_id, currencyCode, lines } = payload;
+      const contractId = String(id);
+
+      const productGid = lines?.[0]?.productId;
+      const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
+
+      // Construct customerGid for the GraphQL query
+      const customerGid = customer_id ? `gid://shopify/Customer/${customer_id}` : null;
+      let customerEmail = null;
+
+      if (customerGid && admin) {
+        try {
+          const customerResponse = await admin.graphql(
+            `#graphql
+            query getCustomerEmail($id: ID!) {
+              customer(id: $id) {
+                email
+              }
+            }`,
+            { variables: { id: customerGid } }
+          );
+          const customerData = await customerResponse.json();
+          customerEmail = customerData.data?.customer?.email;
+          console.log(`Fetched customer email for ${customerGid}: ${customerEmail}`);
+        } catch (error) {
+          console.error(`Error fetching customer email for ${customerGid}:`, error);
+        }
+      }
       try {
         let localPlan = await db.subscription.findFirst({
           where: { targetId: productGid, shop: shop }
@@ -69,8 +88,8 @@ export const action = async ({ request }) => {
           create: {
             id: contractId,
             shop: shop,
-            customerId: customer?.id,
-            customerName: `${customer?.firstName || ""} ${customer?.lastName || ""}`.trim(),
+            customerId: customerGid,
+            customerName: `Customer ${customer_id}`,
             customerEmail: customerEmail,
             status: status.toUpperCase(),
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
