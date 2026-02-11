@@ -9,8 +9,7 @@ import {
   Spinner,
   Divider,
   Badge,
-  Button, // Import Button
-  useI18n // Import useI18n
+  Button
 } from '@shopify/ui-extensions-react/customer-account';
 import { useEffect, useState } from 'react';
 
@@ -20,74 +19,173 @@ export default reactExtension(
 );
 
 function SubscriptionPage() {
-  const { query } = useApi(); // No i18n here
-  const i18n = useI18n();
+  const { i18n, toast } = useApi(); // Removed 'query' from destructuring
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null); // New error state
+  const [error, setError] = useState(null);
 
-  // This is the bridge to your App Proxy (where the Cancel logic lives)
-  const PORTAL_URL = "/apps/subscription-manager/portal";
+  // Loading states for each action, per contract ID
+  const [isPausing, setIsPausing] = useState({});
+  const [isCancelling, setIsCancelling] = useState({});
+  const [isActivating, setIsActivating] = useState({});
+
+  const CONTRACT_QUERY = `
+    query {
+      customer {
+        subscriptionContracts(first: 50) {
+          nodes {
+            id
+            status
+            nextBillingDate
+            lines(first: 5) {
+              nodes {
+                title
+                quantity
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const fetchSubscriptions = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("shopify://customer-account/api/unstable/graphql.json", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: CONTRACT_QUERY,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.errors && result.errors.length > 0) {
+        setError(result.errors[0].message);
+        setLoading(false);
+        return;
+      }
+
+      const customerData = result?.data?.customer;
+      if (!customerData || !customerData.subscriptionContracts) {
+        setError(i18n.translate('no_customer_data_or_contracts'));
+        setLoading(false);
+        return;
+      }
+      
+      const fetchedNodes = customerData.subscriptionContracts.nodes || [];
+      setContracts(fetchedNodes);
+      setLoading(false);
+    } catch (err) {
+      console.error("Fetch Error:", err);
+      setError(i18n.translate('error_fetching_subscriptions'));
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const getSubscriptions = async () => {
-      try {
-        const response = await fetch("shopify://customer-account/api/unstable/graphql.json", {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            query: `
-              query {
-                customer {
-                  subscriptionContracts(first: 50) {
-                    nodes {
-                      id
-                      status
-                      nextBillingDate
-                      lines(first: 5) {
-                        nodes {
-                          title
-                          quantity
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            `,
-          }),
-        });
+    fetchSubscriptions();
+  }, []); // Empty dependency array means this runs once on mount
 
-        const result = await response.json();
-        console.log("Customer Account GraphQL Result:", JSON.stringify(result, null, 2));
-        
-        if (result.errors && result.errors.length > 0) {
-          setError(result.errors[0].message);
-          setLoading(false);
-          return;
-        }
+  const handleAction = async (contractId, mutationQuery, actionType, setLoadingState) => {
+    setLoadingState(prev => ({ ...prev, [contractId]: true }));
 
-        const customerData = result?.data?.customer;
-        if (!customerData || !customerData.subscriptionContracts) {
-          setError(i18n.translate('no_customer_data_or_contracts'));
-          setLoading(false);
-          return;
-        }
-        
-        const fetchedNodes = customerData.subscriptionContracts.nodes || [];
-        setContracts(fetchedNodes);
-        setLoading(false);
-      } catch (err) {
-        console.error("Fetch Error:", err);
-        setError(i18n.translate('error_fetching_subscriptions'));
-        setLoading(false);
+    try {
+      const response = await fetch("shopify://customer-account/api/unstable/graphql.json", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: mutationQuery,
+          variables: { subscriptionContractId: contractId },
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.errors && result.errors.length > 0) {
+        toast.show(result.errors[0].message);
+        console.error(`${actionType} Error:`, result.errors[0].message);
+        return;
       }
-    };
 
-    getSubscriptions();
-  }, [i18n]); // Removed 'query' from dependencies since we're no longer using useApi().query
+      const mutationKey = `subscriptionContract${actionType}`;
+      const userErrors = result.data?.[mutationKey]?.userErrors;
+      if (userErrors && userErrors.length > 0) {
+        toast.show(userErrors[0].message);
+        console.error(`${actionType} User Error:`, userErrors[0].message);
+        return;
+      }
+
+      toast.show(i18n.translate(`${actionType.toLowerCase()}_success`));
+      fetchSubscriptions(); // Re-fetch to update UI after successful action
+    } catch (error) {
+      toast.show(i18n.translate('action_error'));
+      console.error(`Unhandled ${actionType} Error:`, error);
+    } finally {
+      setLoadingState(prev => ({ ...prev, [contractId]: false }));
+    }
+  };
+
+  const handlePause = (contractId) => handleAction(
+    contractId,
+    `mutation SubscriptionContractPause($subscriptionContractId: ID!) {
+      subscriptionContractPause(subscriptionContractId: $subscriptionContractId) {
+        contract {
+          id
+          status
+        }
+        userErrors {
+          message
+          field
+        }
+      }
+    }`,
+    'Pause',
+    setIsPausing
+  );
+
+  const handleActivate = (contractId) => handleAction(
+    contractId,
+    `mutation SubscriptionContractActivate($subscriptionContractId: ID!) {
+      subscriptionContractActivate(subscriptionContractId: $subscriptionContractId) {
+        contract {
+          id
+          status
+        }
+        userErrors {
+          message
+          field
+        }
+      }
+    }`,
+    'Activate',
+    setIsActivating
+  );
+
+  const handleCancel = (contractId) => handleAction(
+    contractId,
+    `mutation SubscriptionContractCancel($subscriptionContractId: ID!) {
+      subscriptionContractCancel(subscriptionContractId: $subscriptionContractId) {
+        contract {
+          id
+          status
+        }
+        userErrors {
+          message
+          field
+        }
+      }
+    }`,
+    'Cancel',
+    setIsCancelling
+  );
 
   if (loading) {
     return (
@@ -98,7 +196,7 @@ function SubscriptionPage() {
     );
   }
 
-  if (error) { // Display error message if present
+  if (error) {
     return (
       <Card padding>
         <Text tone="critical">{error}</Text>
@@ -108,6 +206,7 @@ function SubscriptionPage() {
 
   return (
     <BlockStack spacing="loose">
+      {/* Removed Toast component as api.toast.show is used directly */}
       <Heading>{i18n.translate('title')}</Heading>
       <Divider />
 
@@ -126,18 +225,41 @@ function SubscriptionPage() {
                     </Text>
                     <InlineStack spacing="tight">
                        <Text appearance="subdued">{i18n.translate('status')}</Text>
-                       {/* Using 'success' if allowed, falling back to 'default' if strict */}
-                       <Badge tone={contract.status === 'ACTIVE' ? 'success' : 'subdued'}>
+                       <Badge tone={contract.status === 'ACTIVE' ? 'success' : (contract.status === 'PAUSED' ? 'warning' : 'critical')}>
                           {contract.status}
                        </Badge>
                     </InlineStack>
                  </BlockStack>
 
-                 {/* --- CRITICAL ADDITION: The Manage Button --- */}
-                 {/* This button takes the user to your App Proxy Portal to cancel/edit */}
-                 <Button kind="secondary" to={PORTAL_URL}>
-                    {i18n.translate('manage')}
-                 </Button>
+                 <InlineStack>
+                    {contract.status === 'PAUSED' ? (
+                        <Button
+                            kind="primary"
+                            onPress={() => handleActivate(contract.id)}
+                            loading={isActivating[contract.id]}
+                            disabled={isActivating[contract.id]}
+                        >
+                            {i18n.translate('continue_subscription')}
+                        </Button>
+                    ) : (
+                        <Button
+                            kind="secondary"
+                            onPress={() => handlePause(contract.id)}
+                            loading={isPausing[contract.id]}
+                            disabled={isPausing[contract.id]}
+                        >
+                            {i18n.translate('pause_subscription')}
+                        </Button>
+                    )}
+                    <Button
+                        kind="destructive"
+                        onPress={() => handleCancel(contract.id)}
+                        loading={isCancelling[contract.id]}
+                        disabled={isCancelling[contract.id]}
+                    >
+                        {i18n.translate('remove_subscription')}
+                    </Button>
+                 </InlineStack>
               </InlineStack>
 
               <BlockStack spacing="none">

@@ -18,6 +18,7 @@ api_version = "2025-04" # Using the latest stable version
     "subscription_contracts/create", 
     "subscription_contracts/update",
     "subscription_billing_attempts/success",
+    "subscription_billing_attempts/failure", # CORRECTED: Listen for failed billing attempts
     "orders/create"
   ]
   uri = "/webhooks"
