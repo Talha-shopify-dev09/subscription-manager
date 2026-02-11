@@ -9,7 +9,7 @@ ENV NODE_ENV=production
 
 COPY package.json package-lock.json* ./
 
-RUN npm install --legacy-peer-deps && npm cache clean --force
+RUN npm ci
 
 COPY . .
 
