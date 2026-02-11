@@ -1,12 +1,14 @@
-import { Resend } from 'resend';
+import * as SibApiV3Sdk from '@getbrevo/brevo';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+let apiKey = apiInstance.authentications['apiKey'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
 
 /**
- * Sends an email using the Resend service.
+ * Sends an email using the Brevo (formerly Sendinblue) service.
  * @param {object} options - Email options.
- * @param {string} options.to - Recipient email address(es).
- * @param {string} options.from - Sender email address. Must be a verified sender in Resend.
+ * @param {string} options.to - Recipient email address.
+ * @param {string} options.from - Sender email address. Must be a verified sender in Brevo.
  * @param {string} options.subject - Subject line of the email.
  * @param {string} [options.text] - Plain text content of the email.
  * @param {string} [options.html] - HTML content of the email (optional).
@@ -14,31 +16,31 @@ const resend = new Resend(process.env.RESEND_API_KEY);
  */
 export async function sendEmail({ to, from, subject, text, html }) {
   if (!from) {
-    // Default to the first verified email from the environment if not explicitly provided
-    from = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'; // Fallback to Resend's default
-    console.warn(`'from' address not provided, defaulting to ${from}. Ensure this is a verified sender in Resend.`);
+    from = process.env.BREVO_FROM_EMAIL || 'no-reply@example.com';
+    console.warn(`'from' address not provided, defaulting to ${from}. Ensure this is a verified sender in Brevo.`);
   }
+
+  const sendSmtpEmail = {
+    sender: { email: from },
+    to: [{ email: to }],
+    subject: subject,
+    textContent: text,
+    htmlContent: html,
+  };
 
   try {
     console.log(`Attempting to send email to ${to} from ${from} with subject: "${subject}"`);
-    const { data, error } = await resend.emails.send({
-      from: from,
-      to: to,
-      subject: subject,
-      text: text,
-      html: html,
-    });
+    const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
 
-    if (error) {
-      console.error('Failed to send email:', error);
-      return { success: false, error: error.message };
+    if (data && data.messageId) {
+      console.log('Email sent successfully! Message ID:', data.messageId);
+      return { success: true, id: data.messageId };
+    } else {
+      console.error('Failed to send email: No message ID received from Brevo.', data);
+      return { success: false, error: 'No message ID received from Brevo.' };
     }
-
-    console.log('Email sent successfully! ID: %s', data.id);
-    return { success: true, id: data.id };
   } catch (error) {
-    console.error('Failed to send email:', error);
-    return { success: false, error: error.message };
+    console.error('Failed to send email:', error.response ? error.response.text : error.message);
+    return { success: false, error: error.response ? error.response.text : error.message };
   }
 }
-
