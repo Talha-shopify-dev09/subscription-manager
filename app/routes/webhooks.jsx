@@ -86,19 +86,44 @@ export const action = async ({ request }) => {
 
     // --- 3. HANDLE SUBSCRIPTION UPDATES ---
     case "SUBSCRIPTION_CONTRACTS_UPDATE": {
-      const { id, status, nextBillingDate } = payload;
+      const { id, status, nextBillingDate, customer } = payload; // Added customer to destructure
       const contractId = String(id);
       const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
       try {
-        await db.contract.update({
+        const updatedContract = await db.contract.update({
           where: { id: contractId },
           data: {
             status: status.toUpperCase(),
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
             recurringPrice: recurringPrice,
           },
+          select: { // Select customer info to send email
+            customerEmail: true,
+            customerName: true,
+          }
         });
         console.log(`🔄 Updated Contract ${id} to ${status}`);
+
+        const customerEmail = updatedContract.customerEmail;
+        const customerFirstName = updatedContract.customerName?.split(' ')[0];
+
+        if (customerEmail) {
+          if (status.toUpperCase() === 'PAUSED') {
+            await sendEmail({
+              to: customerEmail,
+              subject: `[${shop}] Your Subscription Has Been Paused`,
+              text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully paused. You can resume it anytime from your portal.\n\nManage your subscriptions here: ${portalBaseUrl}`,
+              html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully paused. You can resume it anytime from your portal.</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+            });
+          } else if (status.toUpperCase() === 'CANCELLED') {
+            await sendEmail({
+              to: customerEmail,
+              subject: `[${shop}] Your Subscription Has Been Cancelled`,
+              text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully cancelled. We're sorry to see you go!\n\nManage your subscriptions here: ${portalBaseUrl}`,
+              html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully cancelled. We're sorry to see you go!</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+            });
+          }
+        }
       } catch (error) {
         console.error("❌ Error updating contract:", error);
       }
