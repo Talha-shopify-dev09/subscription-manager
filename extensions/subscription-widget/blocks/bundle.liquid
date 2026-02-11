@@ -1,10 +1,8 @@
 {% assign all_bundles = shop.metafields.my_app.active_bundles.value %}
 {% assign currency_symbol = cart.currency.symbol %}
 {% assign section_scope = 'bundle-' | append: section.id %}
-{% assign selected_bundle_id = section.settings.selected_bundle_id %}
+{% assign selected_bundle_id = section.settings.bundle_to_show_id %}
 {% assign bundle_to_display = null %}
-
-<p>UNCONDITIONAL DEBUG: Raw selected_bundle_id from settings: {{ section.settings.selected_bundle_id }}</p>
 
 {% if selected_bundle_id != blank and all_bundles != blank %}
   {% for b in all_bundles %}
@@ -360,7 +358,7 @@
     },
     {
       "type": "text",
-      "id": "selected_bundle_id",
+      "id": "bundle_to_show_id",
       "label": "Bundle ID to Display",
       "info": "Enter the unique ID of the bundle you want to show."
     }
