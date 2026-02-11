@@ -8,5 +8,12 @@
   "next_billing": "Next Billing:",
   "contract_id": "Contract ID:",
   "no_customer_data_or_contracts": "Could not retrieve customer data or subscription contracts. Please try again later.",
-  "error_fetching_subscriptions": "An error occurred while fetching your subscriptions. Please try again later."
+  "error_fetching_subscriptions": "An error occurred while fetching your subscriptions. Please try again later.",
+  "continue_subscription": "Continue Subscription",
+  "pause_subscription": "Pause Subscription",
+  "remove_subscription": "Remove Subscription",
+  "pause_success": "Subscription paused successfully!",
+  "activate_success": "Subscription activated successfully!",
+  "cancel_success": "Subscription cancelled successfully!",
+  "action_error": "An error occurred while performing the action."
 }

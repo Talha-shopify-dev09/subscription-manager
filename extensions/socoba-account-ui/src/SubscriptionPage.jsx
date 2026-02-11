@@ -96,6 +96,7 @@ function SubscriptionPage() {
     setLoadingState(prev => ({ ...prev, [contractId]: true }));
 
     try {
+      console.log(`Attempting to send mutation for contract ${contractId}, type: ${actionType}`);
       const response = await fetch("shopify://customer-account/api/unstable/graphql.json", {
         method: 'POST',
         headers: {
@@ -107,11 +108,23 @@ function SubscriptionPage() {
         }),
       });
 
-      const result = await response.json();
+      console.log(`${actionType} Response Status:`, response.status);
+      const responseText = await response.text();
+      console.log(`${actionType} Raw Response:`, responseText);
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (jsonError) {
+        console.error(`${actionType} JSON parse error:`, jsonError);
+        toast.show(i18n.translate('action_error'));
+        return;
+      }
+      console.log(`${actionType} Parsed Result:`, result);
       
       if (result.errors && result.errors.length > 0) {
         toast.show(result.errors[0].message);
-        console.error(`${actionType} Error:`, result.errors[0].message);
+        console.error(`${actionType} GraphQL Errors:`, result.errors);
         return;
       }
 
@@ -119,7 +132,7 @@ function SubscriptionPage() {
       const userErrors = result.data?.[mutationKey]?.userErrors;
       if (userErrors && userErrors.length > 0) {
         toast.show(userErrors[0].message);
-        console.error(`${actionType} User Error:`, userErrors[0].message);
+        console.error(`${actionType} User Errors:`, userErrors);
         return;
       }
 
