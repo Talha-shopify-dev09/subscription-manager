@@ -4,6 +4,8 @@
 {% assign selected_bundle_id = section.settings.selected_bundle_id %}
 {% assign bundle_to_display = null %}
 
+<p>UNCONDITIONAL DEBUG: Raw selected_bundle_id from settings: {{ section.settings.selected_bundle_id }}</p>
+
 {% if selected_bundle_id != blank and all_bundles != blank %}
   {% for b in all_bundles %}
     {% if b.id == selected_bundle_id %}
