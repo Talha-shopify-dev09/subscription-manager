@@ -49,29 +49,78 @@ function SubscriptionPage() {
     }
   `;
 
-  const fetchSubscriptions = async () => {
-    setLoading(true);
-    setError(null);
-          try {
-          const response = await fetch(`shopify://customer-account/api/unstable/graphql.json?_t=${Date.now()}`, { // Cache-busting
+      const fetchSubscriptions = async () => {
+
+        setLoading(true);
+
+        setError(null);
+
+        try {
+
+          console.log('Attempting to fetch subscriptions...');
+
+          const response = await fetch("shopify://customer-account/api/unstable/graphql.json", { // Removed Cache-busting
+
             method: 'POST',
+
             headers: {
+
               'Content-Type': 'application/json',
+
             },
+
             body: JSON.stringify({
+
               query: CONTRACT_QUERY,
+
             }),
+
           });
+
     
-          const result = await response.json();
-          
-          if (result.errors && result.errors.length > 0) {
-            setError(result.errors[0].message);
+
+          console.log('Fetch Subscriptions Response Status:', response.status);
+
+          const responseText = await response.text();
+
+          console.log('Fetch Subscriptions Raw Response:', responseText);
+
+    
+
+          let result;
+
+          try {
+
+            result = JSON.parse(responseText);
+
+          } catch (jsonError) {
+
+            console.error('Fetch Subscriptions JSON parse error:', jsonError);
+
+            setError(i18n.translate('error_fetching_subscriptions'));
+
             setLoading(false);
+
             return;
+
           }
+
+          console.log('Fetch Subscriptions Parsed Result:', result);
+
+          
+
+          if (result.errors && result.errors.length > 0) {
+
+            setError(result.errors[0].message);
+
+            setLoading(false);
+
+            return;
+
+          }
+
     
-          const customerData = result?.data?.customer;
+            const customerData = result?.data?.customer;
           if (!customerData || !customerData.subscriptionContracts) {
             setError(i18n.translate('no_customer_data_or_contracts'));
             setLoading(false);
@@ -96,18 +145,17 @@ function SubscriptionPage() {
         setLoadingState(prev => ({ ...prev, [contractId]: true }));
     
         try {
-          console.log(`Attempting to send mutation for contract ${contractId}, type: ${actionType}`);
-          const response = await fetch(`shopify://customer-account/api/unstable/graphql.json?_t=${Date.now()}`, { // Cache-busting
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              query: mutationQuery,
-              variables: { subscriptionContractId: contractId },
-            }),
-          });
-      console.log(`${actionType} Response Status:`, response.status);
+                console.log(`Attempting to send mutation for contract ${contractId}, type: ${actionType}`);
+                const response = await fetch("shopify://customer-account/api/unstable/graphql.json", { // Removed Cache-busting
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    query: mutationQuery,
+                    variables: { subscriptionContractId: contractId },
+                  }),
+                });      console.log(`${actionType} Response Status:`, response.status);
       const responseText = await response.text();
       console.log(`${actionType} Raw Response:`, responseText);
 
