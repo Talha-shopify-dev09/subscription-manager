@@ -52,62 +52,61 @@ function SubscriptionPage() {
   const fetchSubscriptions = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const response = await fetch("shopify://customer-account/api/unstable/graphql.json", {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: CONTRACT_QUERY,
-        }),
-      });
-
-      const result = await response.json();
-      
-      if (result.errors && result.errors.length > 0) {
-        setError(result.errors[0].message);
-        setLoading(false);
-        return;
-      }
-
-      const customerData = result?.data?.customer;
-      if (!customerData || !customerData.subscriptionContracts) {
-        setError(i18n.translate('no_customer_data_or_contracts'));
-        setLoading(false);
-        return;
-      }
-      
-      const fetchedNodes = customerData.subscriptionContracts.nodes || [];
-      setContracts(fetchedNodes);
-      setLoading(false);
-    } catch (err) {
-      console.error("Fetch Error:", err);
-      setError(i18n.translate('error_fetching_subscriptions'));
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSubscriptions();
-  }, []); // Empty dependency array means this runs once on mount
-
-  const handleAction = async (contractId, mutationQuery, actionType, setLoadingState) => {
-    setLoadingState(prev => ({ ...prev, [contractId]: true }));
-
-    try {
-      console.log(`Attempting to send mutation for contract ${contractId}, type: ${actionType}`);
-      const response = await fetch("shopify://customer-account/api/unstable/graphql.json", {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: mutationQuery,
-          variables: { subscriptionContractId: contractId },
-        }),
-      });
-
+          try {
+          const response = await fetch(`shopify://customer-account/api/unstable/graphql.json?_t=${Date.now()}`, { // Cache-busting
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              query: CONTRACT_QUERY,
+            }),
+          });
+    
+          const result = await response.json();
+          
+          if (result.errors && result.errors.length > 0) {
+            setError(result.errors[0].message);
+            setLoading(false);
+            return;
+          }
+    
+          const customerData = result?.data?.customer;
+          if (!customerData || !customerData.subscriptionContracts) {
+            setError(i18n.translate('no_customer_data_or_contracts'));
+            setLoading(false);
+            return;
+          }
+          
+          const fetchedNodes = customerData.subscriptionContracts.nodes || [];
+          setContracts(fetchedNodes);
+          setLoading(false);
+        } catch (err) {
+          console.error("Fetch Error:", err);
+          setError(i18n.translate('error_fetching_subscriptions'));
+          setLoading(false);
+        }
+      };
+    
+      useEffect(() => {
+        fetchSubscriptions();
+      }, []); // Empty dependency array means this runs once on mount
+    
+      const handleAction = async (contractId, mutationQuery, actionType, setLoadingState) => {
+        setLoadingState(prev => ({ ...prev, [contractId]: true }));
+    
+        try {
+          console.log(`Attempting to send mutation for contract ${contractId}, type: ${actionType}`);
+          const response = await fetch(`shopify://customer-account/api/unstable/graphql.json?_t=${Date.now()}`, { // Cache-busting
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              query: mutationQuery,
+              variables: { subscriptionContractId: contractId },
+            }),
+          });
       console.log(`${actionType} Response Status:`, response.status);
       const responseText = await response.text();
       console.log(`${actionType} Raw Response:`, responseText);

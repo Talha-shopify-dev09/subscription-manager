@@ -34,7 +34,7 @@ api_version = "2025-04" # Using the latest stable version
 
 [access_scopes]
 # Scopes updated to include subscription and product permissions
-scopes = "read_customers,write_customers,read_price_rules,write_price_rules,read_discounts,write_discounts,read_orders,write_orders,read_products,write_products,write_own_subscription_contracts,read_own_subscription_contracts,customer_read_orders,customer_read_own_subscription_contracts,customer_read_customers"
+scopes = "read_customers,write_customers,read_price_rules,write_price_rules,read_discounts,write_discounts,read_orders,write_orders,read_products,write_products,write_own_subscription_contracts,read_own_subscription_contracts,customer_read_orders,customer_read_own_subscription_contracts,customer_read_customers,customer_write_own_subscription_contracts"
 use_legacy_install_flow = false
 
 [auth]
