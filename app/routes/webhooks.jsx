@@ -17,31 +17,14 @@ export const action = async ({ request }) => {
     // --- 2. HANDLE NEW SUBSCRIPTION CONTRACTS ---
     case "SUBSCRIPTION_CONTRACTS_CREATE": {
       const { id, status, nextBillingDate, customer, currencyCode, lines } = payload;
-      const contractId = String(id);
+            const contractId = String(id);
+            
+            const productGid = lines?.[0]?.productId; 
+            const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
       
-      // Attempt to get customerId from payload; if not present, customerEmail will remain null
-      const customerId = customer?.id;
-      let customerEmail = null;
-
-      if (customerId && admin) {
-        try {
-          const customerResponse = await admin.graphql(
-            `#graphql
-            query getCustomerEmail($id: ID!) {
-              customer(id: $id) {
-                email
-              }
-            }`,
-            { variables: { id: customerId } }
-          );
-          const customerData = await customerResponse.json();
-          customerEmail = customerData.data?.customer?.email;
-          console.log(`Fetched customer email for ${customerId}: ${customerEmail}`);
-        } catch (error) {
-          console.error(`Error fetching customer email for ${customerId}:`, error);
-        }
-      }
-
+            // Attempt to get customerId from payload; if not present, customerEmail will remain null
+            const customerId = customer?.id;
+            let customerEmail = null;
       try {
         let localPlan = await db.subscription.findFirst({
           where: { targetId: productGid, shop: shop }
