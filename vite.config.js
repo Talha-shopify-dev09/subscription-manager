@@ -51,6 +51,9 @@ export default defineConfig({
   plugins: [reactRouter(), tsconfigPaths()],
   build: {
     assetsInlineLimit: 0,
+    rollupOptions: { // NEW: Add rollupOptions
+      external: ["nodemailer"], // NEW: Externalize nodemailer
+    },
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react"],
