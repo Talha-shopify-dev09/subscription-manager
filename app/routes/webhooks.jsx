@@ -107,6 +107,8 @@ export const action = async ({ request }) => {
         const customerEmail = updatedContract.customerEmail;
         const customerFirstName = updatedContract.customerName?.split(' ')[0];
 
+        console.log(`Debug: Attempting to send email for contract ${contractId}. Customer Email: ${customerEmail}, First Name: ${customerFirstName}`);
+
         if (customerEmail) {
           if (status.toUpperCase() === 'PAUSED') {
             await sendEmail({
