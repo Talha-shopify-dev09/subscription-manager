@@ -1,82 +1,56 @@
+{% comment %} 
+  Fetch from Shop Metafields 
+{% endcomment %}
 {% assign all_bundles = shop.metafields.my_app.active_bundles.value %}
 {% assign currency_symbol = cart.currency.symbol %}
-{% assign section_scope = 'bundle-' | append: section.id %}
-{% assign selected_bundle_id = section.settings.bundle_to_show_id %}
+
+{% comment %} 
+  APP BLOCKS use 'block.id' and 'block.settings' 
+{% endcomment %}
+{% assign block_scope = 'bundle-block-' | append: block.id %}
+{% assign selected_bundle_id = block.settings.bundle_to_show_id | strip %}
 {% assign bundle_to_display = null %}
 
+{% comment %} Loop through bundles to find the match by shortId {% endcomment %}
 {% if selected_bundle_id != blank and all_bundles != blank %}
   {% for b in all_bundles %}
-    {% if b.shortId == selected_bundle_id %}
+    {% assign current_short_id = b.shortId | append: '' %}
+    {% if current_short_id == selected_bundle_id %}
       {% assign bundle_to_display = b %}
       {% break %}
     {% endif %}
   {% endfor %}
 {% endif %}
 
-{% if bundle_to_display != null %}
-  <div class="{{ section_scope }} bundle-container" data-bundle-section>
-    <p>DEBUG: Selected Bundle ID: {{ selected_bundle_id }}</p>
-    <p>DEBUG: All Bundles (raw): {{ all_bundles | json }}</p>
-    <p>DEBUG: Bundle to Display: {{ bundle_to_display.title }} ({{ bundle_to_display.shortId }})</p>
-    {% comment %} 
-      Determine the image: 
-      1. Use the image uploaded in Section Settings if available.
-      2. Fallback to the first product's featured image.
-    {% endcomment %}
-    {% assign custom_image = block.settings.custom_bundle_image %}
-    {% assign fallback_image = nil %}
+<div class="{{ block_scope }} bundle-container" data-bundle-block>
+  {% if bundle_to_display != null %}
     
-    <section class="bundle-wrapper" aria-labelledby="bundle-title-{{ section.id }}-{{ bundle_to_display.id }}">
-      
-      <div class="bundle-content-column">
-        <header class="bundle-header">
-          <h2 id="bundle-title-{{ section.id }}-{{ bundle_to_display.id }}" class="bundle-title">
-            {{ bundle_to_display.title }}
-          </h2>
-        </header>
+    {% comment %} DEBUG - Remove these lines once working {% endcomment %}
+    <div style="background: #fff3cd; padding: 10px; font-size: 11px; border: 1px solid #ffeeba;">
+        <strong>DEBUG:</strong> Showing Bundle: {{ bundle_to_display.title }} (ID: {{ bundle_to_display.shortId }})
+    </div>
 
-        <div class="bundle-list" role="list">
+    <section class="bundle-wrapper">
+      <div class="bundle-content-column">
+        <h2 class="bundle-title">{{ bundle_to_display.title }}</h2>
+
+        <div class="bundle-list">
           {% for product_info in bundle_to_display.products %}
             {% assign prod = all_products[product_info.handle] %}
             {% if prod != empty %}
-              {% assign target_price_cents = product_info.bundlePrice | times: 100 | round %}
-              
-              {% if forloop.first %}
-                {% assign fallback_image = prod.featured_image %}
-              {% endif %}
-
-              <div class="bundle-list-item" role="listitem">
+              <div class="bundle-list-item">
                 <div class="item-details">
                   <h3 class="product-title">{{ prod.title }}</h3>
-                  <div class="item-meta">
-                     {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle_to_display.shortId | append: '-' | append: prod.id %}
-                     <div class="variant-wrapper">
-                       <select
-                         id="{{ select_id }}"
-                         class="bundle-variant-select"
-                         data-bundle-id="{{ bundle_to_display.shortId }}"
-                         data-product-handle="{{ product_info.handle }}"
-                         data-target-price-cents="{{ target_price_cents }}"
-                       >
-                         {% for variant in prod.variants %}
-                           <option
-                             value="{{ variant.id }}"
-                             data-variant-price-cents="{{ variant.price }}"
-                             {% if variant.available == false %}disabled{% endif %}
-                           >
-                             {{ variant.title }}{% unless variant.available %} (Sold out){% endunless %}
-                           </option>
-                         {% endfor %}
-                       </select>
-                     </div>
-                  </div>
+                  <select class="bundle-variant-select" data-bundle-id="{{ bundle_to_display.id }}">
+                    {% for variant in prod.variants %}
+                      <option value="{{ variant.id }}" {% unless variant.available %}disabled{% endunless %}>
+                        {{ variant.title }} - {{ variant.price | money }}
+                      </option>
+                    {% endfor %}
+                  </select>
                 </div>
-
                 <div class="item-pricing">
-                  <div class="price-stack">
-                    <span class="original-price">{{ prod.price | money }}</span>
-                    <span class="bundle-price-text">{{ target_price_cents | money }}</span>
-                  </div>
+                  <span class="bundle-price-text">{{ product_info.bundlePrice | times: 100 | money }}</span>
                 </div>
               </div>
             {% endif %}
@@ -85,265 +59,38 @@
 
         <footer class="bundle-footer">
           <div class="total-row">
-            <span class="total-label">TOTAL</span>
-            <div class="total-values">
-               <span class="bundle-savings-tag" data-bundle-savings-row hidden>
-                  Save <span data-bundle-savings></span>
-               </span>
-              <span class="final-price" data-bundle-total>{{ currency_symbol }}{{ bundle_to_display.price }}</span>
-            </div>
+            <span class="total-label">BUNDLE TOTAL:</span>
+            <span class="final-price">{{ currency_symbol }}{{ bundle_to_display.price }}</span>
           </div>
-
-          <button
-            type="button"
-            class="add-bundle-btn"
-            data-add-bundle
-            data-bundle-id="{{ bundle_to_display.shortId }}"
-          >
-            Buy Now
+          <button type="button" class="add-bundle-btn" data-add-bundle data-bundle-id="{{ bundle_to_display.id }}">
+            Add Bundle to Cart
           </button>
         </footer>
       </div>
-
-      <div class="bundle-image-column">
-        <div class="hero-image-wrapper">
-           {% if custom_image != blank %}
-              <img src="{{ custom_image | image_url: width: 1200 }}" alt="{{ bundle_to_display.title | escape }}" loading="lazy">
-           {% elsif fallback_image != blank %}
-              <img src="{{ fallback_image | image_url: width: 1200 }}" alt="{{ bundle_to_display.title | escape }}" loading="lazy">
-           {% else %}
-              <div class="image-fallback"></div>
-           {% endif %}
-        </div>
-      </div>
-
     </section>
-  </div>
 
-  <style>
-    .{{ section_scope }}.bundle-container {
-      max-width: 100%;
-      margin: 60px auto;
-      padding: 0 20px;
-      color: #333;
-    }
+  {% else %}
+    <div class="bundle-placeholder" style="padding: 20px; border: 2px dashed #ccc; text-align: center;">
+      <p><strong>Bundle Block</strong></p>
+      <p>Please enter a valid Bundle Short ID in the block settings.</p>
+      <p>Available IDs: 
+        {% for b in all_bundles %}
+           <code>{{ b.shortId }}</code>{% unless forloop.last %}, {% endunless %}
+        {% endfor %}
+      </p>
+    </div>
+  {% endif %}
+</div>
 
-    .{{ section_scope }} .bundle-wrapper {
-      display: flex;
-      flex-direction: column-reverse;
-      gap: 20px;
-      margin-bottom: 60px;
-      background: #dadad9;
-      border-radius: 4px;
-      overflow: hidden;
-    }
-
-    @media (min-width: 992px) {
-      .{{ section_scope }} .bundle-wrapper {
-        flex-direction: row;
-        align-items: stretch;
-      }
-    }
-
-    .{{ section_scope }} .bundle-content-column {
-      flex: 1.2;
-      padding: 40px;
-    }
-    
-    .{{ section_scope }} .bundle-image-column {
-      flex: 1;
-      display: flex;
-      background: #F4F1EA; 
-    }
-
-    .{{ section_scope }} .hero-image-wrapper {
-      width: 100%;
-      display: flex;
-    }
-
-    .{{ section_scope }} .hero-image-wrapper img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-
-    .{{ section_scope }} .bundle-title {
-      font-size: 2rem;
-      font-weight: 500;
-      margin-bottom: 30px;
-      letter-spacing: -0.02em;
-    }
-
-    .{{ section_scope }} .bundle-list {
-      display: flex;
-      flex-direction: column;
-      border-top: 1px solid #E5E5E5;
-    }
-
-    .{{ section_scope }} .bundle-list-item {
-      display: flex;
-      justify-content: space-between;
-      padding: 20px 0;
-      border-bottom: 1px solid #E5E5E5;
-    }
-
-    .{{ section_scope }} .product-title {
-      font-size: 1.1rem;
-      font-weight: 600;
-      margin: 0;
-    }
-
-    .{{ section_scope }} .bundle-variant-select {
-        border: none;
-        background: transparent;
-        font-size: 0.9rem;
-        color: #777;
-        padding: 5px 0;
-        cursor: pointer;
-        font-family: inherit;
-    }
-
-    .{{ section_scope }} .price-stack {
-        text-align: right;
-    }
-    .{{ section_scope }} .original-price {
-      text-decoration: line-through;
-      color: #aaa;
-      font-size: 0.9rem;
-      display: block;
-    }
-    .{{ section_scope }} .bundle-price-text {
-      font-weight: 600;
-      font-size: 1.1rem;
-    }
-
-    .{{ section_scope }} .bundle-footer {
-      margin-top: 40px;
-    }
-
-    .{{ section_scope }} .total-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 25px;
-    }
-    
-    .{{ section_scope }} .total-label {
-        font-weight: 700;
-        font-size: 1.2rem;
-    }
-
-    .{{ section_scope }} .final-price {
-      font-weight: 700;
-      font-size: 1.4rem;
-    }
-    
-    .{{ section_scope }} .bundle-savings-tag {
-        background: #D4E2D4;
-        color: #2D5A27;
-        font-size: 0.75rem;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-weight: 700;
-        margin-right: 10px;
-        text-transform: uppercase;
-    }
-
-    .{{ section_scope }} .add-bundle-btn {
-      width: 100%;
-      background: #847561; 
-      color: #fff;
-      border: none;
-      padding: 18px;
-      font-size: 1.1rem;
-      font-weight: 600;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-
-    .{{ section_scope }} .add-bundle-btn:hover { opacity: 0.9; }
-  </style>
-
-  <script>
-    (function () {
-      const root = document.querySelector('.{{ section_scope }}[data-bundle-section]');
-      if (!root) return;
-
-      const formatMoney = (cents) => {
-        const symbol = {{ currency_symbol | json }};
-        return symbol + (cents / 100).toFixed(2);
-      };
-
-      const updateUI = (bundleId) => {
-        const wrapper = root.querySelector(`[data-bundle-id="${bundleId}"].add-bundle-btn`).closest('.bundle-wrapper');
-        const selects = wrapper.querySelectorAll('.bundle-variant-select');
-        const savingsRow = wrapper.querySelector('[data-bundle-savings-row]');
-        const savingsEl = wrapper.querySelector('[data-bundle-savings]');
-        
-        let totalSavings = 0;
-        selects.forEach(sel => {
-          const target = parseInt(sel.dataset.targetPriceCents);
-          const original = parseInt(sel.options[sel.selectedIndex].dataset.variantPriceCents);
-          if (original > target) totalSavings += (original - target);
-        });
-
-        if (totalSavings > 0) {
-          savingsEl.textContent = formatMoney(totalSavings);
-          savingsRow.hidden = false;
-        } else {
-          savingsRow.hidden = true;
-        }
-      };
-
-      root.addEventListener('change', (e) => {
-        if (e.target.classList.contains('bundle-variant-select')) {
-          updateUI(e.target.dataset.bundleId); // Keep this for variant changes
-        }
-      });
-
-      // Initial UI update for the displayed bundle
-      updateUI({{ bundle_to_display.shortId | json }});
-
-      root.addEventListener('click', async (e) => {
-        const btn = e.target.closest('[data-add-bundle]');
-        if (!btn) return;
-
-        // Use the bundle ID of the currently displayed bundle
-        const bundleId = {{ bundle_to_display.shortId | json }};
-        const selects = root.querySelectorAll(`.bundle-variant-select[data-bundle-id="${bundleId}"]`);
-        const items = Array.from(selects).map(sel => ({
-          id: Number(sel.value),
-          quantity: 1,
-          properties: { "_bundle_id": bundleId }
-        }));
-
-        btn.disabled = true;
-        btn.textContent = "Adding...";
-
-        try {
-          await fetch(window.Shopify.routes.root + 'cart/add.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items })
-          });
-          window.location.href = '/cart';
-        } catch (err) {
-          btn.disabled = false;
-          btn.textContent = "Buy Now";
-          alert("Error adding bundle.");
-        }
-      });
-    })();
-  </script>
-{% else %}
-  <div class="bundle-placeholder">
-    <p>DEBUG: No bundle found with ID: {{ selected_bundle_id }}</p>
-    <p>DEBUG: All Bundles (raw): {{ all_bundles | json }}</p>
-    <p>No bundles configured or selected.</p>
-  </div>
-{% endif %}
+<style>
+  .{{ block_scope }}.bundle-container { margin: 20px 0; }
+  .{{ block_scope }} .bundle-wrapper { border: 1px solid #ddd; border-radius: 8px; background: #fff; overflow: hidden; }
+  .{{ block_scope }} .bundle-content-column { padding: 25px; }
+  .{{ block_scope }} .bundle-title { margin-top: 0; font-size: 1.5rem; }
+  .{{ block_scope }} .bundle-list-item { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; }
+  .{{ block_scope }} .bundle-variant-select { margin-top: 8px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; }
+  .{{ block_scope }} .add-bundle-btn { width: 100%; padding: 15px; background: #000; color: #fff; border: none; cursor: pointer; font-weight: bold; }
+</style>
 
 {% schema %}
 {
@@ -353,14 +100,13 @@
     {
       "type": "image_picker",
       "id": "custom_bundle_image",
-      "label": "Custom Bundle Image",
-      "info": "If left blank, the first product image will be used."
+      "label": "Custom Bundle Image"
     },
     {
       "type": "text",
       "id": "bundle_to_show_id",
-      "label": "Bundle ID to Display",
-      "info": "Enter the unique short ID (e.g., Scb001) of the bundle you want to show."
+      "label": "Bundle Short ID",
+      "info": "Check your app dashboard for the Short ID."
     }
   ]
 }
