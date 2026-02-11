@@ -154,13 +154,15 @@ export async function action({ request }) {
         }
 
         // C. Save to DB
+        const newShortId = await generateShortId(session.shop); 
         await db.bundle.create({
             data: {
                 shop: session.shop,
                 title,
                 price: totalBundle.toFixed(2),
                 productIds: JSON.stringify(products),
-                discountId: createdDiscountId
+                discountId: createdDiscountId,
+                shortId: newShortId
             }
         });
 
@@ -183,6 +185,7 @@ async function syncMetafields(admin, shopDomain) {
 
   const jsonString = JSON.stringify(bundles.map(b => ({
     id: b.id,
+    shortId: b.shortId, // Add shortId here
     title: b.title,
     price: b.price,
     products: JSON.parse(b.productIds) 
@@ -207,6 +210,24 @@ async function syncMetafields(admin, shopDomain) {
       }
     }
   );
+}
+
+// New helper function to generate shortId
+async function generateShortId(shopDomain) {
+  const latestBundle = await db.bundle.findFirst({
+    where: { shop: shopDomain, shortId: { startsWith: "Scb" } },
+    orderBy: { shortId: 'desc' }, // Assuming Scb001, Scb002... will sort correctly
+    select: { shortId: true },
+  });
+
+  let nextNumber = 1;
+  if (latestBundle?.shortId) {
+    const num = parseInt(latestBundle.shortId.replace("Scb", ""), 10);
+    if (!isNaN(num)) {
+      nextNumber = num + 1;
+    }
+  }
+  return `Scb${String(nextNumber).padStart(3, '0')}`;
 }
 
 // 3. UI COMPONENT
@@ -322,7 +343,7 @@ export default function BundlePage() {
                     <IndexTable resourceName={{ singular: 'bundle', plural: 'bundles' }} itemCount={bundles.length} headings={[{ title: 'ID' }, { title: 'Title' }, { title: 'Price' }, { title: 'Action' }]}>
                     {bundles.map((bundle, index) => (
                         <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>
-                        <IndexTable.Cell>{bundle.id}</IndexTable.Cell>
+                        <IndexTable.Cell>{bundle.shortId || bundle.id}</IndexTable.Cell>
                         <IndexTable.Cell><Text fontWeight="bold">{bundle.title}</Text></IndexTable.Cell>
                         <IndexTable.Cell>{currencySymbol}{bundle.price}</IndexTable.Cell>
                         <IndexTable.Cell><Button tone="critical" onClick={() => handleDelete(bundle.id)}>Delete</Button></IndexTable.Cell>

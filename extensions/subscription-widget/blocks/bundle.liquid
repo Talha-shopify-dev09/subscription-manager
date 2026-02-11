@@ -6,7 +6,7 @@
 
 {% if selected_bundle_id != blank and all_bundles != blank %}
   {% for b in all_bundles %}
-    {% if b.id == selected_bundle_id %}
+    {% if b.shortId == selected_bundle_id %}
       {% assign bundle_to_display = b %}
       {% break %}
     {% endif %}
@@ -17,7 +17,7 @@
   <div class="{{ section_scope }} bundle-container" data-bundle-section>
     <p>DEBUG: Selected Bundle ID: {{ selected_bundle_id }}</p>
     <p>DEBUG: All Bundles (raw): {{ all_bundles | json }}</p>
-    <p>DEBUG: Bundle to Display: {{ bundle_to_display.title }} ({{ bundle_to_display.id }})</p>
+    <p>DEBUG: Bundle to Display: {{ bundle_to_display.title }} ({{ bundle_to_display.shortId }})</p>
     {% comment %} 
       Determine the image: 
       1. Use the image uploaded in Section Settings if available.
@@ -49,12 +49,12 @@
                 <div class="item-details">
                   <h3 class="product-title">{{ prod.title }}</h3>
                   <div class="item-meta">
-                     {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle_to_display.id | append: '-' | append: prod.id %}
+                     {% assign select_id = 'bundle-variant-' | append: section.id | append: '-' | append: bundle_to_display.shortId | append: '-' | append: prod.id %}
                      <div class="variant-wrapper">
                        <select
                          id="{{ select_id }}"
                          class="bundle-variant-select"
-                         data-bundle-id="{{ bundle_to_display.id }}"
+                         data-bundle-id="{{ bundle_to_display.shortId }}"
                          data-product-handle="{{ product_info.handle }}"
                          data-target-price-cents="{{ target_price_cents }}"
                        >
@@ -98,7 +98,7 @@
             type="button"
             class="add-bundle-btn"
             data-add-bundle
-            data-bundle-id="{{ bundle_to_display.id }}"
+            data-bundle-id="{{ bundle_to_display.shortId }}"
           >
             Buy Now
           </button>
@@ -304,14 +304,14 @@
       });
 
       // Initial UI update for the displayed bundle
-      updateUI({{ bundle_to_display.id | json }});
+      updateUI({{ bundle_to_display.shortId | json }});
 
       root.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-add-bundle]');
         if (!btn) return;
 
         // Use the bundle ID of the currently displayed bundle
-        const bundleId = {{ bundle_to_display.id | json }};
+        const bundleId = {{ bundle_to_display.shortId | json }};
         const selects = root.querySelectorAll(`.bundle-variant-select[data-bundle-id="${bundleId}"]`);
         const items = Array.from(selects).map(sel => ({
           id: Number(sel.value),
@@ -360,7 +360,7 @@
       "type": "text",
       "id": "bundle_to_show_id",
       "label": "Bundle ID to Display",
-      "info": "Enter the unique ID of the bundle you want to show."
+      "info": "Enter the unique short ID (e.g., Scb001) of the bundle you want to show."
     }
   ]
 }

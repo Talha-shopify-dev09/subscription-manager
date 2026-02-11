@@ -72,6 +72,7 @@ model Subscription {
 // --- BUNDLE MODEL ---
 model Bundle {
   id           String   @id @default(uuid())
+  shortId      String?  @unique // New field for user-friendly ID
   shop         String
   title        String
   price        String?  
