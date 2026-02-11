@@ -72,24 +72,24 @@ model Subscription {
 // --- BUNDLE MODEL ---
 model Bundle {
   id           String   @id @default(uuid())
-  shortId      String?  @unique // New field for user-friendly ID
-  shop         String
-  title        String
-  price        String?  
-  discount     String?  
-  discountCode String?  
-  discountId   String?  // gid://shopify/DiscountAutomaticNode/123
+    shortId      String?
+    shop         String
+    title        String
+    price        String?
+    discount     String?
+    discountCode String?
+    discountId   String?  // gid://shopify/DiscountAutomaticNode/123
   
-  productIds   Json     // Stores GIDs as a JSON array
+    productIds   Json     // Stores GIDs as a JSON array
   
-  contracts    Contract[] 
-
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([shop])
-}
-
+    contracts    Contract[]
+  
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+  
+    @@index([shop])
+    @@unique([shop, shortId])
+  }
 // --- CONTRACT MODEL ---
 model Contract {
   id              String         @id // gid://shopify/SubscriptionContract/123
