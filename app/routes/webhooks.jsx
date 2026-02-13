@@ -1,7 +1,7 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { sendEmail } from "../email.server"; // Import the email sending utility
-import { getProductDetails } from "~/helpers/shopify.server";
+import { getProductDetails } from "../helpers/shopify.server";
 
 export const action = async ({ request }) => {
   console.log("Webhook action function hit!"); // Added for debugging
