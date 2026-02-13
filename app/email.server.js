@@ -9,7 +9,7 @@ export async function sendEmail({ to, from, subject, text, html, templateId, par
     console.error('Brevo API Key is not set in environment variables (BREVO_API_KEY). Email will not be sent.');
     return { success: false, error: 'Brevo API Key is not configured.' };
   }
-  apiKey.apiKey = process.env.BREVO_API_KEY; // Set API key here, after the check
+  apiKey.apiKey = process.env.BREVO_API_KEY;
 
   if (!from) {
     from = process.env.BREVO_FROM_EMAIL || 'no-reply@example.com';
@@ -19,20 +19,24 @@ export async function sendEmail({ to, from, subject, text, html, templateId, par
   const sendSmtpEmail = {
     sender: { email: from },
     to: [{ email: to }],
+    subject: subject, // Always set top-level subject, it can be overridden by template's subject
   };
 
   if (templateId) {
     sendSmtpEmail.templateId = templateId;
+    // params is an object containing dynamic data for the template
+    // The Brevo SDK expects 'params' to be directly assigned for template data.
     sendSmtpEmail.params = params;
-    sendSmtpEmail.subject = params?.subject || subject; // Use subject from params if available
+    // Remove text/html if templateId is present
+    delete sendSmtpEmail.textContent;
+    delete sendSmtpEmail.htmlContent;
   } else {
-    sendSmtpEmail.subject = subject;
     sendSmtpEmail.textContent = text;
     sendSmtpEmail.htmlContent = html;
   }
 
   try {
-    console.log(`Attempting to send email to ${to} from ${from} with subject: "${sendSmtpEmail.subject}"`);
+    console.log(`Attempting to send email to ${to} from ${from} with subject: "${sendSmtpEmail.subject}" (Template ID: ${templateId || 'N/A'})`);
     const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
 
     if (data && data.messageId) {
@@ -49,6 +53,7 @@ export async function sendEmail({ to, from, subject, text, html, templateId, par
         const errorBody = JSON.parse(error.response.text);
         errorMessage = `Brevo API Error (${error.response.status}): ${errorBody.message || error.response.text}`;
       } catch (jsonParseError) {
+        // If error.response.text is not JSON, use it directly
         errorMessage = `Brevo API Error (${error.response.status}): ${error.response.text}`;
       }
     } else if (error.message) {
