@@ -1,6 +1,7 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { sendEmail } from "../email.server"; // Import the email sending utility
+import { getProductDetails } from "~/helpers/shopify.server";
 
 export const action = async ({ request }) => {
   console.log("Webhook action function hit!"); // Added for debugging
@@ -108,45 +109,85 @@ export const action = async ({ request }) => {
 
     // --- 3. HANDLE SUBSCRIPTION UPDATES ---
     case "SUBSCRIPTION_CONTRACTS_UPDATE": {
-      const { id, status, nextBillingDate, customer } = payload; // Added customer to destructure
+      const { id, status } = payload;
       const contractId = String(id);
-      const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
+      const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount; // Keep this as it's part of contract update
+
       try {
         const updatedContract = await db.contract.update({
           where: { id: contractId },
           data: {
             status: status.toUpperCase(),
-            nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
+            nextBillingDate: payload.nextBillingDate ? new Date(payload.nextBillingDate) : null,
             recurringPrice: recurringPrice,
           },
-          select: { // Select customer info to send email
+          select: { // Select customer info and plan/product info to send email
             customerEmail: true,
             customerName: true,
+            planId: true,
+            subscription: {
+                select: {
+                    id: true,
+                    targetId: true, // Shopify GID of the product
+                }
+            }
           }
         });
         console.log(`🔄 Updated Contract ${id} to ${status}`);
 
         const customerEmail = updatedContract.customerEmail;
-        const customerFirstName = updatedContract.customerName?.split(' ')[0];
+        const customerFirstName = updatedContract.customerName?.split(' ')[0] || 'there';
 
-        console.log(`Debug: Attempting to send email for contract ${contractId}. Customer Email: ${customerEmail}, First Name: ${customerFirstName}`);
+        if (customerEmail && updatedContract.subscription?.targetId) {
+          const productDetails = await getProductDetails(request, updatedContract.subscription.targetId);
 
-        if (customerEmail) {
+          const emailParams = {
+            customerFirstName: customerFirstName,
+            productTitle: productDetails?.title || "your subscribed product",
+            productImageUrl: productDetails?.imageUrl || "",
+            productUrl: productDetails?.productUrl || "",
+            accountOrderUrl: portalBaseUrl,
+          };
+
           if (status.toUpperCase() === 'PAUSED') {
             await sendEmail({
               to: customerEmail,
               subject: `[${shop}] Your Subscription Has Been Paused`,
-              text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully paused. You can resume it anytime from your portal.\n\nManage your subscriptions here: ${portalBaseUrl}`,
-              html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully paused. You can resume it anytime from your portal.</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+              templateId: parseInt(process.env.BREVO_PAUSE_TEMPLATE_ID),
+              params: {
+                ...emailParams,
+                subject: `[${shop}] Your Subscription Has Been Paused`,
+              }
             });
           } else if (status.toUpperCase() === 'CANCELLED') {
             await sendEmail({
               to: customerEmail,
               subject: `[${shop}] Your Subscription Has Been Cancelled`,
-              text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully cancelled. We're sorry to see you go!\n\nManage your subscriptions here: ${portalBaseUrl}`,
-              html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully cancelled. We're sorry to see you go!</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+              templateId: parseInt(process.env.BREVO_CANCEL_TEMPLATE_ID),
+              params: {
+                ...emailParams,
+                subject: `[${shop}] Your Subscription Has Been Cancelled`,
+              }
             });
           }
+        } else if (customerEmail) {
+            // Fallback for contracts without linked products or if product details fetching fails
+            console.warn(`No product details for contract ${contractId}. Sending plain text email.`);
+            if (status.toUpperCase() === 'PAUSED') {
+                await sendEmail({
+                  to: customerEmail,
+                  subject: `[${shop}] Your Subscription Has Been Paused`,
+                  text: `Hi ${customerFirstName},\n\nYour subscription for contract ${contractId} has been successfully paused. You can resume it anytime from your portal.\n\nManage your subscriptions here: ${portalBaseUrl}`,
+                  html: `<p>Hi ${customerFirstName},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully paused. You can resume it anytime from your portal.</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+                });
+              } else if (status.toUpperCase() === 'CANCELLED') {
+                await sendEmail({
+                  to: customerEmail,
+                  subject: `[${shop}] Your Subscription Has Been Cancelled`,
+                  text: `Hi ${customerFirstName},\n\nYour subscription for contract ${contractId} has been successfully cancelled. We're sorry to see you go!\n\nManage your subscriptions here: ${portalBaseUrl}`,
+                  html: `<p>Hi ${customerFirstName},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully cancelled. We're sorry to see you go!</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+                });
+              }
         }
       } catch (error) {
         console.error("❌ Error updating contract:", error);
@@ -199,27 +240,62 @@ export const action = async ({ request }) => {
 
     // --- 4.1. HANDLE FAILED BILLING ATTEMPTS ---
     case "SUBSCRIPTION_BILLING_ATTEMPTS_FAILURE": {
-      const { subscriptionContractId, customer, errorMessage } = payload; // Assuming errorMessage might be in payload
+      const { subscriptionContractId, customer, errorMessage } = payload;
       
-      const customerEmail = customer?.email;
-      const customerFirstName = customer?.firstName;
       const failureReason = errorMessage || "payment failed"; // Default message if no specific error
 
       try {
-        await db.contract.update({
+        const failedContract = await db.contract.update({
           where: { id: String(subscriptionContractId) },
           data: {
             status: 'FAILED', // Update contract status to FAILED
           },
+          select: { // Select customer info and plan/product info to send email
+            customerEmail: true,
+            customerName: true,
+            planId: true,
+            subscription: {
+                select: {
+                    id: true,
+                    targetId: true, // Shopify GID of the product
+                }
+            }
+          }
         });
         console.log(`❌ Updated Contract ${subscriptionContractId} status to FAILED due to billing attempt failure.`);
 
-        if (customerEmail) {
+        const customerEmail = failedContract.customerEmail;
+        const customerFirstName = failedContract.customerName?.split(' ')[0] || 'there';
+
+        if (customerEmail && failedContract.subscription?.targetId) {
+            const productDetails = await getProductDetails(request, failedContract.subscription.targetId);
+
+            const emailParams = {
+                customerFirstName: customerFirstName,
+                productTitle: productDetails?.title || "your subscribed product",
+                productImageUrl: productDetails?.imageUrl || "",
+                productUrl: productDetails?.productUrl || "",
+                accountOrderUrl: portalBaseUrl,
+                failureReason: failureReason,
+            };
+
             await sendEmail({
                 to: customerEmail,
                 subject: `[${shop}] Important: Your Subscription Payment Failed`,
-                text: `Hi ${customerFirstName || 'there'},\n\nYour recent subscription payment for contract ${subscriptionContractId} failed due to: ${failureReason}. Please update your payment method to avoid interruption of service.\n\nYou can update your payment method here: ${portalBaseUrl}`,
-                html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your recent subscription payment for contract <b>${subscriptionContractId}</b> failed due to: <b>${failureReason}</b>. Please update your payment method to avoid interruption of service.</p><p>You can update your payment method here: <a href="${portalBaseUrl}">Update Payment Method</a></p>`
+                templateId: parseInt(process.env.BREVO_FAILURE_TEMPLATE_ID),
+                params: {
+                    ...emailParams,
+                    subject: `[${shop}] Important: Your Subscription Payment Failed`,
+                }
+            });
+        } else if (customerEmail) {
+            // Fallback for contracts without linked products or if product details fetching fails
+            console.warn(`No product details for contract ${subscriptionContractId}. Sending plain text email.`);
+            await sendEmail({
+                to: customerEmail,
+                subject: `[${shop}] Important: Your Subscription Payment Failed`,
+                text: `Hi ${customerFirstName},\n\nYour recent subscription payment for contract ${subscriptionContractId} failed due to: ${failureReason}. Please update your payment method to avoid interruption of service.\n\nYou can update your payment method here: ${portalBaseUrl}`,
+                html: `<p>Hi ${customerFirstName},</p><p>Your recent subscription payment for contract <b>${subscriptionContractId}</b> failed due to: <b>${failureReason}</b>. Please update your payment method to avoid interruption of service.</p><p>You can update your payment method here: <a href="${portalBaseUrl}">Update Payment Method</a></p>`
             });
         }
 

@@ -3,7 +3,7 @@ import * as SibApiV3Sdk from '@getbrevo/brevo';
 let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 let apiKey = apiInstance.authentications['apiKey'];
 
-export async function sendEmail({ to, from, subject, text, html }) {
+export async function sendEmail({ to, from, subject, text, html, templateId, params }) {
   // Ensure API Key is set
   if (!process.env.BREVO_API_KEY) {
     console.error('Brevo API Key is not set in environment variables (BREVO_API_KEY). Email will not be sent.');
@@ -19,13 +19,20 @@ export async function sendEmail({ to, from, subject, text, html }) {
   const sendSmtpEmail = {
     sender: { email: from },
     to: [{ email: to }],
-    subject: subject,
-    textContent: text,
-    htmlContent: html,
   };
 
+  if (templateId) {
+    sendSmtpEmail.templateId = templateId;
+    sendSmtpEmail.params = params;
+    sendSmtpEmail.subject = params?.subject || subject; // Use subject from params if available
+  } else {
+    sendSmtpEmail.subject = subject;
+    sendSmtpEmail.textContent = text;
+    sendSmtpEmail.htmlContent = html;
+  }
+
   try {
-    console.log(`Attempting to send email to ${to} from ${from} with subject: "${subject}"`);
+    console.log(`Attempting to send email to ${to} from ${from} with subject: "${sendSmtpEmail.subject}"`);
     const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
 
     if (data && data.messageId) {
@@ -38,7 +45,6 @@ export async function sendEmail({ to, from, subject, text, html }) {
   } catch (error) {
     let errorMessage = 'An unknown error occurred while sending email via Brevo.';
     if (error.response) {
-      // Brevo SDK errors often have error.response.body and error.response.status
       try {
         const errorBody = JSON.parse(error.response.text);
         errorMessage = `Brevo API Error (${error.response.status}): ${errorBody.message || error.response.text}`;

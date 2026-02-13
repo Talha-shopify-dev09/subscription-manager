@@ -41,6 +41,7 @@ export const loader = async ({ request }) => {
             take: 100 // Limit to first 100 failed contracts
           })
         ]);
+        console.log("Loader Promise Results:", { activeContracts, pausedCount, cancelledCount, bundleSalesCount, bundleSalesAmount, allTransactions, failedContractsData });
     
         const activeCount = activeContracts.length;
         const totalBundleAmount = bundleSalesAmount._sum.totalAmount || 0;
@@ -57,12 +58,13 @@ export const loader = async ({ request }) => {
         allTransactions.forEach(transaction => {
           totalSubscriptionEarnings += parseFloat(transaction.amount);
         });
+        console.log("Loader Calculated Data:", { activeCount, pausedCount, cancelledCount, bundlePurchaseCount: bundleSalesCount, totalBundleAmount, totalActiveSubscriptionAmount, totalSubscriptionEarnings, failedContracts });
     
         return Response.json({
           activeCount,
           pausedCount,
           cancelledCount,
-          bundlePurchaseCount,
+          bundlePurchaseCount: bundleSalesCount,
           totalBundleAmount,
           totalActiveSubscriptionAmount,
           totalSubscriptionEarnings,
