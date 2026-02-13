@@ -32,7 +32,7 @@
 
 {% if bundle_to_display != null %}
 
-  <section class="bundle-wrapper">
+  <section class="bundle-wrapper {% if block.settings.image_position == 'right' %}image-right{% else %}image-left{% endif %}">
 
     {% if block.settings.show_image and block.settings.custom_bundle_image != blank %}
       <div class="bundle-image-wrapper">
@@ -116,22 +116,30 @@
   background: {{ block.settings.card_background }};
   box-shadow: 0 10px 30px rgba(0,0,0,0.06);
   overflow: hidden;
-  display:flex;
-  gap:05px;
+  display: flex;
+  gap: 05px;
+}
+
+.{{ block_scope }} .bundle-wrapper.image-right {
+  flex-direction: row-reverse;
 }
 
 .{{ block_scope }} .bundle-image-wrapper {
   text-align: center;
+  flex: 0 0 {{ block.settings.image_width }}%;
+  max-width: {{ block.settings.image_width }}%;
 }
 
 .{{ block_scope }} .bundle-image {
   width: 100%;
-  height: auto;
+  height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .{{ block_scope }} .bundle-content-column {
   padding: 30px;
+  flex: 1 1 auto;
 }
 
 .{{ block_scope }} .bundle-title {
@@ -201,6 +209,9 @@
   border: 2px dashed #ccc;
   text-align: center;
 }
+
+/* Custom CSS From Theme Editor */
+{{ block.settings.custom_css }}
 </style>
 
 <script>
@@ -239,13 +250,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     try {
-      // 1. Add items to cart
       const response = await fetch(window.Shopify.routes.root + 'cart/add.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           items: items,
-          // This tells Shopify to return the updated cart drawer/notification HTML
           sections: "cart-drawer,cart-notification,cart-icon-bubble" 
         })
       });
@@ -253,25 +262,19 @@ document.addEventListener('DOMContentLoaded', function() {
       const responseData = await response.json();
       if (!response.ok) throw new Error(responseData.description || "Failed to add bundle");
 
-      // 2. Handle the Cart UI
       if (cartAction === 'drawer') {
-        // Look for the global 'cart-drawer' or 'cart-notification' components used in Dawn
         const cartDrawer = document.querySelector('cart-drawer') || document.querySelector('cart-notification');
         
         if (cartDrawer) {
-          // Dawn-specific method to refresh and open the drawer
-          // This prevents the "empty drawer" or "needs refresh" issue
           if (cartDrawer.renderContents) {
              cartDrawer.renderContents(responseData);
           } else {
-             // Fallback for older themes: trigger a refresh event
              document.dispatchEvent(new CustomEvent('cart:updated', {
                detail: { cart: responseData }
              }));
              document.querySelector('#cart-icon-bubble')?.click();
           }
         } else {
-          // If no specific component found, try a forced click or redirect
           const cartIcon = document.querySelector('#cart-icon-bubble, .header__icon--cart, .cart-icon');
           if (cartIcon) cartIcon.click();
           else window.location.href = window.Shopify.routes.root + "cart";
@@ -301,6 +304,27 @@ document.addEventListener('DOMContentLoaded', function() {
     { "type": "checkbox", "id": "show_image", "label": "Show Bundle Image", "default": true },
     { "type": "image_picker", "id": "custom_bundle_image", "label": "Custom Bundle Image" },
 
+    {
+      "type": "select",
+      "id": "image_position",
+      "label": "Image Position",
+      "default": "left",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "right", "label": "Right" }
+      ]
+    },
+
+    {
+      "type": "range",
+      "id": "image_width",
+      "min": 20,
+      "max": 60,
+      "step": 5,
+      "default": 40,
+      "label": "Image Width (Percent)"
+    },
+
     { "type": "range", "id": "padding_top", "min": 0, "max": 100, "step": 5, "default": 30, "label": "Padding Top" },
     { "type": "range", "id": "padding_bottom", "min": 0, "max": 100, "step": 5, "default": 30, "label": "Padding Bottom" },
     { "type": "range", "id": "padding_left", "min": 0, "max": 100, "step": 5, "default": 0, "label": "Padding Left" },
@@ -323,6 +347,12 @@ document.addEventListener('DOMContentLoaded', function() {
         { "value": "drawer", "label": "Open Cart Drawer" },
         { "value": "page", "label": "Go to Cart Page" }
       ]
+    },
+
+    {
+      "type": "textarea",
+      "id": "custom_css",
+      "label": "Custom CSS"
     }
   ]
 }

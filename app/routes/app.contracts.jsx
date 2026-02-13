@@ -175,7 +175,7 @@ export default function Contracts() {
           {node.lines.edges.map((l, i) => <div key={i}>{l.node.quantity} x {l.node.title}</div>)}
         </IndexTable.Cell>
         <IndexTable.Cell>
-          <Badge tone={node.status === 'ACTIVE' ? 'success' : 'attention'}>{node.status}</Badge>
+          <Badge tone={node.status === 'ACTIVE' ? 'success' : (node.status === 'FAILED' ? 'critical' : 'attention')}>{node.status}</Badge>
         </IndexTable.Cell>
         <IndexTable.Cell>
           {node.nextBillingDate ? new Date(node.nextBillingDate).toLocaleDateString() : "N/A"}
