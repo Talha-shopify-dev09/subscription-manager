@@ -10,6 +10,7 @@ import {
   BlockStack,
   InlineGrid,
   Box,
+  Divider,
 } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import db from "../db.server"; 
@@ -26,11 +27,24 @@ export const loader = async ({ request }) => {
           db.contract.count({ where: { shop: session.shop, status: "CANCELLED", planId: { not: null } } }),
           db.bundleSale.count({ where: { shop: session.shop } }),
           db.bundleSale.aggregate({ _sum: { totalAmount: true }, where: { shop: session.shop } }),
-          db.transaction.findMany({ where: { shop: session.shop } })
+          db.transaction.findMany({ where: { shop: session.shop } }),
+          db.contract.findMany({ 
+            where: { shop: session.shop, status: "FAILED" },
+            select: {
+              id: true,
+              customerName: true,
+              customerEmail: true,
+              recurringPrice: true,
+              nextBillingDate: true,
+              status: true,
+            },
+            take: 100 // Limit to first 100 failed contracts
+          })
         ]);
     
         const activeCount = activeContracts.length;
         const totalBundleAmount = bundleSalesAmount._sum.totalAmount || 0;
+        const failedContracts = failedContractsData; // Assigning the fetched data
     
         let totalActiveSubscriptionAmount = 0;
         activeContracts.forEach(contract => {
@@ -48,16 +62,18 @@ export const loader = async ({ request }) => {
           activeCount,
           pausedCount,
           cancelledCount,
-          bundlePurchaseCount: bundleSalesCount,
+          bundlePurchaseCount,
           totalBundleAmount,
           totalActiveSubscriptionAmount,
-          totalSubscriptionEarnings
+          totalSubscriptionEarnings,
+          failedContracts // Include failed contracts in the response
         });
   } catch (error) {
     console.error("Dashboard Loader Error:", error);
     return Response.json({
       activeCount: 0, pausedCount: 0, cancelledCount: 0, bundlePurchaseCount: 0,
-      totalBundleAmount: 0, totalActiveSubscriptionAmount: 0, totalSubscriptionEarnings: 0
+      totalBundleAmount: 0, totalActiveSubscriptionAmount: 0, totalSubscriptionEarnings: 0,
+      failedContracts: [] // Ensure failedContracts is always present
     });
   }
 };
@@ -71,7 +87,8 @@ export default function Index() {
     bundlePurchaseCount,
     totalBundleAmount,
     totalActiveSubscriptionAmount,
-    totalSubscriptionEarnings
+    totalSubscriptionEarnings,
+    failedContracts // Destructure failedContracts from loader data
   } = useLoaderData();
 
   const formatCurrency = (amount) => new Intl.NumberFormat('en-US', {
@@ -164,6 +181,43 @@ export default function Index() {
                   </BlockStack>
               </Card>
             </Layout.Section>
+
+            {/* --- FAILED SUBSCRIPTIONS BLOCK --- */}
+            {failedContracts && failedContracts.length > 0 && (
+              <Layout.Section>
+                <Card>
+                  <BlockStack gap="300">
+                    <Text as="h2" variant="headingMd" tone="critical">Failed Subscriptions ({failedContracts.length})</Text>
+                    <Divider />
+                    <BlockStack gap="300">
+                      {failedContracts.map((contract) => (
+                        <BlockStack key={contract.id} gap="100">
+                          <InlineGrid columns="1fr auto">
+                            <Text as="span" fontWeight="bold">{contract.customerName || contract.customerEmail || "N/A"}</Text>
+                            <Text as="span" tone="critical">{contract.status}</Text>
+                          </InlineGrid>
+                          <Text as="p" variant="bodySm" tone="subdued">{contract.customerEmail}</Text>
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            Contract ID: {contract.id.split('/').pop()}
+                          </Text>
+                          {contract.recurringPrice && (
+                            <Text as="p" variant="bodySm" tone="subdued">
+                              Amount: {formatCurrency(contract.recurringPrice)}
+                            </Text>
+                          )}
+                          {contract.nextBillingDate && (
+                            <Text as="p" variant="bodySm" tone="subdued">
+                              Last Attempt: {new Date(contract.nextBillingDate).toLocaleDateString()}
+                            </Text>
+                          )}
+                          <Divider />
+                        </BlockStack>
+                      ))}
+                    </BlockStack>
+                  </BlockStack>
+                </Card>
+              </Layout.Section>
+            )}
 
             {/* --- NAVIGATION CARDS --- */}
             <Layout.Section>
