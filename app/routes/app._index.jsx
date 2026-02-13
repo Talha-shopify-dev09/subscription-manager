@@ -21,7 +21,7 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
   try {
-        const [activeContracts, pausedCount, cancelledCount, bundleSalesCount, bundleSalesAmount, allTransactions] = await Promise.all([
+        const [activeContracts, pausedCount, cancelledCount, bundleSalesCount, bundleSalesAmount, allTransactions, failedContractsData] = await Promise.all([
           db.contract.findMany({ where: { shop: session.shop, status: "ACTIVE", planId: { not: null } } }),
           db.contract.count({ where: { shop: session.shop, status: "PAUSED", planId: { not: null } } }),
           db.contract.count({ where: { shop: session.shop, status: "CANCELLED", planId: { not: null } } }),
@@ -41,7 +41,6 @@ export const loader = async ({ request }) => {
             take: 100 // Limit to first 100 failed contracts
           })
         ]);
-        console.log("Loader Promise Results:", { activeContracts, pausedCount, cancelledCount, bundleSalesCount, bundleSalesAmount, allTransactions, failedContractsData });
     
         const activeCount = activeContracts.length;
         const totalBundleAmount = bundleSalesAmount._sum.totalAmount || 0;
@@ -58,7 +57,6 @@ export const loader = async ({ request }) => {
         allTransactions.forEach(transaction => {
           totalSubscriptionEarnings += parseFloat(transaction.amount);
         });
-        console.log("Loader Calculated Data:", { activeCount, pausedCount, cancelledCount, bundlePurchaseCount: bundleSalesCount, totalBundleAmount, totalActiveSubscriptionAmount, totalSubscriptionEarnings, failedContracts });
     
         return Response.json({
           activeCount,
