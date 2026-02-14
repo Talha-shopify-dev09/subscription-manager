@@ -52,6 +52,7 @@
         {% for product_info in bundle_to_display.products %}
           {% assign prod = all_products[product_info.handle] %}
           {% if prod != empty %}
+            {% assign bundle_price_cents = product_info.bundlePrice | times: 100 | round %}
             <div class="bundle-list-item" data-product-handle="{{ product_info.handle }}">
               
               <div class="item-details">
@@ -65,6 +66,7 @@
                     <option 
                       value="{{ variant.id }}"
                       data-price="{{ variant.price }}"
+                      data-price-money="{{ variant.price | money }}"
                       {% unless variant.available %}disabled{% endunless %}
                     >
                       {{ variant.title }} – {{ variant.price | money }}
@@ -74,8 +76,11 @@
               </div>
 
               <div class="item-pricing">
-                <span class="bundle-price-text">
-                  {{ prod.price | money }}
+                <span class="original-price">
+                  Original: {{ prod.price | money }}
+                </span>
+                <span class="bundle-price-text" data-bundle-price-cents="{{ bundle_price_cents }}">
+                  Bundle: {{ bundle_price_cents | money }}
                 </span>
               </div>
 
@@ -173,6 +178,24 @@
   border-color: {{ block.settings.button_color }};
 }
 
+.{{ block_scope }} .item-pricing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.{{ block_scope }} .original-price {
+  color: #8c9196;
+  text-decoration: line-through;
+  font-size: 0.95rem;
+}
+
+.{{ block_scope }} .bundle-price-text {
+  color: {{ block.settings.text_color }};
+  font-weight: 600;
+}
+
 .{{ block_scope }} .total-row {
   display: flex;
   justify-content: space-between;
@@ -225,16 +248,32 @@ document.addEventListener('DOMContentLoaded', function() {
   const errorEl = container.querySelector('.bundle-error');
   const cartAction = '{{ block.settings.cart_action }}'; 
 
+  function updateOriginalPrice(select) {
+    const option = select.options[select.selectedIndex];
+    const item = select.closest('.bundle-list-item');
+    const originalEl = item?.querySelector('.original-price');
+    if (originalEl && option?.dataset?.priceMoney) {
+      originalEl.innerText = `Original: ${option.dataset.priceMoney}`;
+    }
+  }
+
   function updateTotal() {
     let total = 0;
-    selects.forEach(select => {
-      const option = select.options[select.selectedIndex];
-      if (option.dataset.price) total += parseInt(option.dataset.price);
+    const priceEls = container.querySelectorAll('.bundle-price-text');
+    priceEls.forEach(priceEl => {
+      const cents = priceEl.dataset.bundlePriceCents;
+      if (cents) total += parseInt(cents, 10);
     });
     totalEl.innerText = (total / 100).toFixed(2);
   }
 
-  selects.forEach(select => select.addEventListener('change', updateTotal));
+  selects.forEach(select => {
+    select.addEventListener('change', () => {
+      updateOriginalPrice(select);
+      updateTotal();
+    });
+    updateOriginalPrice(select);
+  });
   updateTotal();
 
   button.addEventListener('click', async function() {

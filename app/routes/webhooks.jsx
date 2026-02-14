@@ -112,14 +112,22 @@ export const action = async ({ request }) => {
       const contractId = String(id);
       const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
       try {
-        const updatedContract = await db.contract.update({
+        const updatedContract = await db.contract.upsert({
           where: { id: contractId },
-          data: {
+          update: {
             status: status.toUpperCase(),
             nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
             recurringPrice: recurringPrice,
           },
-          select: { // Select customer info to send email
+          create: {
+            id: contractId,
+            shop: shop,
+            status: status.toUpperCase(),
+            nextBillingDate: nextBillingDate ? new Date(nextBillingDate) : null,
+            recurringPrice: recurringPrice,
+            currencyCode: payload.currencyCode || "USD",
+          },
+          select: {
             customerEmail: true,
             customerName: true,
           }
@@ -168,6 +176,17 @@ export const action = async ({ request }) => {
       const customerFirstName = customer?.firstName;
 
       try {
+        await db.contract.upsert({
+          where: { id: String(subscriptionContractId) },
+          update: {},
+          create: {
+            id: String(subscriptionContractId),
+            shop: shop,
+            status: "ACTIVE",
+            currencyCode: currency || "USD",
+          },
+        });
+
         await db.transaction.create({
           data: {
             shop: shop,
@@ -206,10 +225,16 @@ export const action = async ({ request }) => {
       const failureReason = errorMessage || "payment failed"; // Default message if no specific error
 
       try {
-        await db.contract.update({
+        await db.contract.upsert({
           where: { id: String(subscriptionContractId) },
-          data: {
-            status: 'FAILED', // Update contract status to FAILED
+          update: {
+            status: 'FAILED',
+          },
+          create: {
+            id: String(subscriptionContractId),
+            shop: shop,
+            status: 'FAILED',
+            currencyCode: payload.currencyCode || "USD",
           },
         });
         console.log(`❌ Updated Contract ${subscriptionContractId} status to FAILED due to billing attempt failure.`);
