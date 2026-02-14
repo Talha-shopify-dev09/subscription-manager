@@ -18,7 +18,7 @@
   {% endfor %}
 {% endif %}
 
-<div 
+<div
   class="{{ block_scope }} bundle-container"
   data-bundle-block="{{ block.id }}"
   style="
@@ -29,308 +29,506 @@
     background: {{ block.settings.background_color }};
   "
 >
+  {% if bundle_to_display != null %}
+    <section class="bundle-wrapper {% if block.settings.image_position == 'right' %}image-right{% else %}image-left{% endif %}">
+      {% comment %} Image Column {% endcomment %}
+      {% if block.settings.show_image and block.settings.custom_bundle_image != blank %}
+        <div class="bundle-image-column">
+          <img
+            src="{{ block.settings.custom_bundle_image | image_url: width: 1200 }}"
+            alt="{{ bundle_to_display.title }}"
+            loading="lazy"
+            class="bundle-image"
+          >
+        </div>
+      {% endif %}
 
-{% if bundle_to_display != null %}
+      {% comment %} Content Column {% endcomment %}
+      <div class="bundle-content-column">
+        {% comment %} Bundle Title {% endcomment %}
+        <h2 class="bundle-title">{{ bundle_to_display.title }}</h2>
 
-  <section class="bundle-wrapper {% if block.settings.image_position == 'right' %}image-right{% else %}image-left{% endif %}">
+        {% comment %} Product List {% endcomment %}
+        <div class="bundle-products-list">
+          {% for product_info in bundle_to_display.products %}
+            {% assign prod = all_products[product_info.handle] %}
+            {% if prod != empty %}
+              {% assign first_variant = prod.selected_or_first_available_variant %}
+              {% assign bundle_price_cents = product_info.bundlePrice | times: 100 | round %}
 
-    {% if block.settings.show_image and block.settings.custom_bundle_image != blank %}
-      <div class="bundle-image-wrapper">
-        <img 
-          src="{{ block.settings.custom_bundle_image | image_url: width: 1000 }}"
-          alt="Bundle Image"
-          loading="lazy"
-          class="bundle-image"
-        >
-      </div>
-    {% endif %}
+              <div class="bundle-product-item" data-product-handle="{{ product_info.handle }}">
+                <div class="product-info">
+                  <h3 class="product-name">{{ prod.title }}</h3>
 
-    <div class="bundle-content-column">
-      <h2 class="bundle-title">{{ bundle_to_display.title }}</h2>
+                  {% comment %} Variant Selector {% endcomment %}
+                  {% assign first_variant = prod.selected_or_first_available_variant %}
 
-      <div class="bundle-list">
-        {% for product_info in bundle_to_display.products %}
-          {% assign prod = all_products[product_info.handle] %}
-          {% if prod != empty %}
-            {% assign bundle_price_cents = product_info.bundlePrice | times: 100 | round %}
-            <div class="bundle-list-item" data-product-handle="{{ product_info.handle }}">
-              
-              <div class="item-details">
-                <h3 class="product-title">{{ prod.title }}</h3>
-
-                <select 
-                  class="bundle-variant-select"
-                  data-product-id="{{ prod.id }}"
-                >
-                  {% for variant in prod.variants %}
-                    <option 
-                      value="{{ variant.id }}"
-                      data-price="{{ variant.price }}"
-                      data-price-money="{{ variant.price | money }}"
-                      {% unless variant.available %}disabled{% endunless %}
+                  {% if prod.variants.size > 1 %}
+                    <select
+                      class="variant-selector"
+                      data-product-id="{{ prod.id }}"
                     >
-                      {{ variant.title }} – {{ variant.price | money }}
-                    </option>
-                  {% endfor %}
-                </select>
+                      {% for variant in prod.variants %}
+                        <option
+                          value="{{ variant.id }}"
+                          data-price="{{ variant.price }}"
+                          data-price-money="{{ variant.price | money }}"
+                          {% unless variant.available %}
+                            disabled
+                          {% endunless %}
+                        >
+                          {{ variant.title -}}
+                          {%- unless variant.available %} (Sold Out){% endunless %}
+                        </option>
+                      {% endfor %}
+                    </select>
+                  {% else %}
+                    <input
+                      type="hidden"
+                      class="bundle-variant-id"
+                      value="{{ first_variant.id }}"
+                      data-price="{{ first_variant.price }}"
+                      data-price-money="{{ first_variant.price | money }}"
+                      data-product-id="{{ prod.id }}"
+                    >
+                  {% endif %}
+                </div>
+
+                <div class="product-price">
+                  {% if block.settings.show_original_price %}
+                    <span class="price-original" data-original-money="{{ first_variant.price | money }}">
+                      {{ first_variant.price | money }}
+                    </span>
+                  {% endif %}
+
+                  <span class="price-bundle" data-bundle-price-cents="{{ bundle_price_cents }}">
+                    {{ bundle_price_cents | money }}
+                  </span>
+                </div>
               </div>
-
-              <div class="item-pricing">
-                <span class="original-price">
-                  Original: {{ prod.price | money }}
-                </span>
-                <span class="bundle-price-text" data-bundle-price-cents="{{ bundle_price_cents }}">
-                  Bundle: {{ bundle_price_cents | money }}
-                </span>
-              </div>
-
-            </div>
-          {% endif %}
-        {% endfor %}
-      </div>
-
-      <div class="bundle-footer">
-        <div class="total-row">
-          <span>BUNDLE TOTAL</span>
-          <span class="final-price">
-            {{ currency_symbol }}
-            <span class="bundle-final-price"></span>
-          </span>
+            {% endif %}
+          {% endfor %}
         </div>
 
-        <button type="button" class="add-bundle-btn">
-          Add Bundle to Cart
-        </button>
+        {% comment %} Bundle Footer {% endcomment %}
+        <div class="bundle-footer">
+          <div class="bundle-total-row">
+            <span class="total-label">TOTAL</span>
+            <span class="total-price">
+              {{ currency_symbol -}}
+              <span class="total-amount"></span>
+            </span>
+          </div>
 
-        <p class="bundle-error"></p>
+          <button type="button" class="buy-now-button">
+            {{ block.settings.button_text }}
+          </button>
+
+          <p class="error-message"></p>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-{% else %}
-  <div class="bundle-placeholder">
-    <strong>Bundle Block</strong><br>
-    Please enter a valid Bundle Short ID.
-  </div>
-{% endif %}
+  {% else %}
+    <div class="bundle-placeholder">
+      <strong>Bundle Block</strong><br>
+      Please enter a valid Bundle Short ID in the theme editor.
+    </div>
+  {% endif %}
 </div>
 
 <style>
-.{{ block_scope }} .bundle-wrapper {
-  border-radius: 14px;
-  background: {{ block.settings.card_background }};
-  box-shadow: 0 10px 30px rgba(0,0,0,0.06);
-  overflow: hidden;
-  display: flex;
-  gap: 05px;
-}
+    /* Container */
+    .{{ block_scope }}.bundle-container {
+      max-width: {{ block.settings.max_width }}px;
+      margin: 0 auto;
+    }
 
-.{{ block_scope }} .bundle-wrapper.image-right {
-  flex-direction: row-reverse;
-}
+    /* Two Column Layout */
+    .{{ block_scope }} .bundle-wrapper {
+      display: grid;
+      grid-template-columns: {% if block.settings.show_image %}{{ block.settings.image_width }}% 1fr{% else %}1fr{% endif %};
+      gap: {{ block.settings.column_gap }}px;
+      background: {{ block.settings.card_background }};
+      border-radius: {{ block.settings.border_radius }}px;
+      overflow: hidden;
+      box-shadow: {{ block.settings.box_shadow }};
+    }
 
-.{{ block_scope }} .bundle-image-wrapper {
-  text-align: center;
-  flex: 0 0 {{ block.settings.image_width }}%;
-  max-width: {{ block.settings.image_width }}%;
-}
+    .{{ block_scope }} .bundle-wrapper.image-right {
+      grid-template-columns: {% if block.settings.show_image %}1fr {{ block.settings.image_width }}%{% else %}1fr{% endif %};
+    }
 
-.{{ block_scope }} .bundle-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
+    /* Image Column */
+    .{{ block_scope }} .bundle-image-column {
+      position: relative;
+      min-height: 400px;
+    }
 
-.{{ block_scope }} .bundle-content-column {
-  padding: 30px;
-  flex: 1 1 auto;
-}
+    .{{ block_scope }} .bundle-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
 
-.{{ block_scope }} .bundle-title {
-  font-size: 1.6rem;
-  margin-bottom: 25px;
-  color: {{ block.settings.heading_color }};
-}
+    /* Content Column */
+    .{{ block_scope }} .bundle-content-column {
+      padding: {{ block.settings.content_padding }}px;
+      display: flex;
+      flex-direction: column;
+    }
 
-.{{ block_scope }} .bundle-list-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 18px 0;
-  border-bottom: 1px solid {{ block.settings.border_color }};
-}
+    /* Bundle Title */
+    .{{ block_scope }} .bundle-title {
+      font-size: {{ block.settings.title_font_size }}px;
+      font-weight: {{ block.settings.title_font_weight }};
+      color: {{ block.settings.heading_color }};
+      margin: 0 0 {{ block.settings.title_margin_bottom }}px 0;
+      line-height: 1.3;
+    }
 
-.{{ block_scope }} .product-title {
-  margin: 0;
-  color: {{ block.settings.text_color }};
-}
+    /* Products List */
+    .{{ block_scope }} .bundle-products-list {
+      flex: 1;
+      margin-bottom: {{ block.settings.products_margin_bottom }}px;
+    }
 
-.{{ block_scope }} .bundle-variant-select {
-  margin-top: 10px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: 1px solid {{ block.settings.border_color }};
-  cursor: pointer;
-  transition: 0.3s ease;
-}
+    .{{ block_scope }} .bundle-product-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: {{ block.settings.product_item_padding }}px 0;
+      border-bottom: {{ block.settings.divider_thickness }}px solid {{ block.settings.border_color }};
+      gap: 20px;
+    }
 
-.{{ block_scope }} .bundle-variant-select:hover {
-  border-color: {{ block.settings.button_color }};
-}
+    .{{ block_scope }} .bundle-product-item:last-child {
+      border-bottom: none;
+    }
 
-.{{ block_scope }} .item-pricing {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
+    .{{ block_scope }} .product-info {
+      flex: 1;
+    }
 
-.{{ block_scope }} .original-price {
-  color: #8c9196;
-  text-decoration: line-through;
-  font-size: 0.95rem;
-}
+    .{{ block_scope }} .product-name {
+      font-size: {{ block.settings.product_name_font_size }}px;
+      font-weight: {{ block.settings.product_name_font_weight }};
+      color: {{ block.settings.text_color }};
+      margin: 0 0 8px 0;
+    }
 
-.{{ block_scope }} .bundle-price-text {
-  color: {{ block.settings.text_color }};
-  font-weight: 600;
-}
+    .{{ block_scope }} .variant-selector {
+      padding: {{ block.settings.selector_padding }}px;
+      border: {{ block.settings.selector_border_width }}px solid {{ block.settings.border_color }};
+      border-radius: {{ block.settings.selector_border_radius }}px;
+      background: {{ block.settings.selector_background }};
+      color: {{ block.settings.text_color }};
+      font-size: {{ block.settings.selector_font_size }}px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      width: 100%;
+      max-width: 300px;
+    }
 
-.{{ block_scope }} .total-row {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 25px;
-  font-weight: 600;
-  color: {{ block.settings.text_color }};
-}
+    .{{ block_scope }} .variant-selector:hover {
+      border-color: {{ block.settings.button_color }};
+    }
 
-.{{ block_scope }} .add-bundle-btn {
-  width: 100%;
-  margin-top: 20px;
-  padding: 16px;
-  background: {{ block.settings.button_color }};
-  color: {{ block.settings.button_text_color }};
-  border: none;
-  border-radius: 10px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: 0.3s ease;
-}
+    .{{ block_scope }} .variant-selector:focus {
+      outline: none;
+      border-color: {{ block.settings.button_color }};
+      box-shadow: 0 0 0 2px {{ block.settings.button_color }}33;
+    }
 
-.{{ block_scope }} .add-bundle-btn:hover {
-  opacity: 0.85;
-}
+    .{{ block_scope }} .product-price {
+      flex-shrink: 0;
+      text-align: right;
+    }
 
-.{{ block_scope }} .bundle-error {
-  color: red;
-  display: none;
-  margin-top: 10px;
-}
+    .{{ block_scope }} .price-value {
+      font-size: {{ block.settings.price_font_size }}px;
+      font-weight: {{ block.settings.price_font_weight }};
+      color: {{ block.settings.text_color }};
+    }
 
-.{{ block_scope }} .bundle-placeholder {
-  padding: 20px;
-  border: 2px dashed #ccc;
-  text-align: center;
-}
+    /* Bundle Footer */
+    .{{ block_scope }} .bundle-footer {
+      border-top: {{ block.settings.footer_border_thickness }}px solid {{ block.settings.border_color }};
+      padding-top: {{ block.settings.footer_padding_top }}px;
+    }
 
-/* Custom CSS From Theme Editor */
-{{ block.settings.custom_css }}
+    .{{ block_scope }} .bundle-total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: {{ block.settings.total_margin_bottom }}px;
+    }
+
+    .{{ block_scope }} .total-label {
+      font-size: {{ block.settings.total_label_font_size }}px;
+      font-weight: {{ block.settings.total_font_weight }};
+      color: {{ block.settings.text_color }};
+      letter-spacing: 1px;
+    }
+
+    .{{ block_scope }} .total-price {
+      font-size: {{ block.settings.total_price_font_size }}px;
+      font-weight: {{ block.settings.total_font_weight }};
+      color: {{ block.settings.heading_color }};
+    }
+
+    /* Buy Now Button */
+    .{{ block_scope }} .buy-now-button {
+      width: 100%;
+      padding: {{ block.settings.button_padding }}px;
+      background: {{ block.settings.button_color }};
+      color: {{ block.settings.button_text_color }};
+      font-size: {{ block.settings.button_font_size }}px;
+      font-weight: {{ block.settings.button_font_weight }};
+      border: none;
+      border-radius: {{ block.settings.button_border_radius }}px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: {{ block.settings.button_text_transform }};
+      letter-spacing: 0.5px;
+    }
+
+    .{{ block_scope }} .buy-now-button:hover {
+      background: {{ block.settings.button_hover_color }};
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px {{ block.settings.button_color }}40;
+    }
+
+    .{{ block_scope }} .buy-now-button:active {
+      transform: translateY(0);
+    }
+
+    .{{ block_scope }} .buy-now-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Error Message */
+    .{{ block_scope }} .error-message {
+      color: {{ block.settings.error_color }};
+      font-size: 14px;
+      margin: 12px 0 0 0;
+      display: none;
+      text-align: center;
+    }
+
+    /* Placeholder */
+    .{{ block_scope }} .bundle-placeholder {
+      padding: 60px 20px;
+      border: 2px dashed {{ block.settings.border_color }};
+      border-radius: {{ block.settings.border_radius }}px;
+      text-align: center;
+      color: {{ block.settings.text_color }};
+    }
+
+    /* Responsive Design */
+    @media (max-width: {{ block.settings.mobile_breakpoint }}px) {
+      .{{ block_scope }} .bundle-wrapper {
+        grid-template-columns: 1fr !important;
+      }
+
+      .{{ block_scope }} .bundle-image-column {
+        min-height: 300px;
+      }
+
+      .{{ block_scope }} .bundle-content-column {
+        padding: {{ block.settings.mobile_content_padding }}px;
+      }
+
+      .{{ block_scope }} .bundle-title {
+        font-size: {{ block.settings.mobile_title_font_size }}px;
+      }
+
+      .{{ block_scope }} .variant-selector {
+        max-width: 100%;
+      }
+    }
+    .{{ block_scope }} .product-price {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .{{ block_scope }} .price-original {
+    color: #8c9196;
+    text-decoration: line-through;
+    font-size: 0.95em;
+  }
+
+  .{{ block_scope }} .price-bundle {
+    font-size: {{ block.settings.price_font_size }}px;
+    font-weight: {{ block.settings.price_font_weight }};
+    color: {{ block.settings.text_color }};
+  }
+
+    /* Custom CSS From Theme Editor */
+    {{ block.settings.custom_css }}
 </style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  const container = document.querySelector('[data-bundle-block="{{ block.id }}"]');
-  if (!container) return;
+  document.addEventListener('DOMContentLoaded', function () {
+    const container = document.querySelector('[data-bundle-block="{{ block.id }}"]');
+    if (!container) return;
 
-  const selects = container.querySelectorAll('.bundle-variant-select');
-  const totalEl = container.querySelector('.bundle-final-price');
-  const button = container.querySelector('.add-bundle-btn');
-  const errorEl = container.querySelector('.bundle-error');
-  const cartAction = '{{ block.settings.cart_action }}'; 
+    const selects = Array.from(container.querySelectorAll('.variant-selector'));
+    const singles = Array.from(container.querySelectorAll('.bundle-variant-id'));
 
-  function updateOriginalPrice(select) {
-    const option = select.options[select.selectedIndex];
-    const item = select.closest('.bundle-list-item');
-    const originalEl = item?.querySelector('.original-price');
-    if (originalEl && option?.dataset?.priceMoney) {
-      originalEl.innerText = `Original: ${option.dataset.priceMoney}`;
+    const totalAmountEl = container.querySelector('.total-amount');
+    const button = container.querySelector('.buy-now-button');
+    const errorEl = container.querySelector('.error-message');
+    const cartAction = '{{ block.settings.cart_action }}';
+
+    function moneyFromCents(cents) {
+      return (cents / 100).toFixed(2);
     }
-  }
 
-  function updateTotal() {
-    let total = 0;
-    const priceEls = container.querySelectorAll('.bundle-price-text');
-    priceEls.forEach(priceEl => {
-      const cents = priceEl.dataset.bundlePriceCents;
-      if (cents) total += parseInt(cents, 10);
-    });
-    totalEl.innerText = (total / 100).toFixed(2);
-  }
+    function getPriceFromControl(el) {
+      if (!el) return 0;
 
-  selects.forEach(select => {
-    select.addEventListener('change', () => {
-      updateOriginalPrice(select);
-      updateTotal();
-    });
-    updateOriginalPrice(select);
-  });
-  updateTotal();
-
-  button.addEventListener('click', async function() {
-    errorEl.style.display = "none";
-    button.disabled = true;
-    const originalText = button.innerText;
-    button.innerText = "Adding...";
-
-    const items = [];
-    selects.forEach(select => {
-      if (!select.value) return;
-      items.push({ id: parseInt(select.value), quantity: 1 });
-    });
-
-    try {
-      const response = await fetch(window.Shopify.routes.root + 'cart/add.js', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          items: items,
-          sections: "cart-drawer,cart-notification,cart-icon-bubble" 
-        })
-      });
-
-      const responseData = await response.json();
-      if (!response.ok) throw new Error(responseData.description || "Failed to add bundle");
-
-      if (cartAction === 'drawer') {
-        const cartDrawer = document.querySelector('cart-drawer') || document.querySelector('cart-notification');
-        
-        if (cartDrawer) {
-          if (cartDrawer.renderContents) {
-             cartDrawer.renderContents(responseData);
-          } else {
-             document.dispatchEvent(new CustomEvent('cart:updated', {
-               detail: { cart: responseData }
-             }));
-             document.querySelector('#cart-icon-bubble')?.click();
-          }
-        } else {
-          const cartIcon = document.querySelector('#cart-icon-bubble, .header__icon--cart, .cart-icon');
-          if (cartIcon) cartIcon.click();
-          else window.location.href = window.Shopify.routes.root + "cart";
-        }
-      } else {
-        window.location.href = window.Shopify.routes.root + "cart";
+      if (el.matches('select')) {
+        const opt = el.options[el.selectedIndex];
+        const p = Number(opt && opt.dataset && opt.dataset.price);
+        return Number.isFinite(p) ? p : 0;
       }
 
-    } catch (err) {
-      errorEl.innerText = err.message;
-      errorEl.style.display = "block";
-    } finally {
-      button.disabled = false;
-      button.innerText = originalText;
+      const p = Number(el.dataset.price);
+      return Number.isFinite(p) ? p : 0;
     }
+
+    function updateProductPrice(select) {
+      const row = select.closest('.bundle-product-item');
+      if (!row) return;
+
+      const originalEl = row.querySelector('.price-original');
+      if (!originalEl) return; // original price is disabled in settings
+
+      const opt = select.options[select.selectedIndex];
+      const money = opt?.dataset?.priceMoney;
+      if (money) originalEl.textContent = money;
+    }
+
+    function updateTotal() {
+      let total = 0;
+      const bundlePrices = container.querySelectorAll('.price-bundle[data-bundle-price-cents]');
+      bundlePrices.forEach((el) => {
+        const cents = parseInt(el.dataset.bundlePriceCents, 10);
+        if (Number.isFinite(cents)) total += cents;
+      });
+      totalAmountEl.textContent = (total / 100).toFixed(2);
+    }
+
+    selects.forEach((select) => {
+      select.addEventListener('change', function () {
+        updateProductPrice(this);
+        updateTotal();
+      });
+    });
+
+    updateTotal();
+
+    async function fetchSectionsForHorizon() {
+      const cartItemsComponents = Array.from(document.querySelectorAll('cart-items-component[data-section-id]'));
+      const sectionIds = cartItemsComponents.map((el) => el.getAttribute('data-section-id')).filter(Boolean);
+
+      if (!sectionIds.length) return null;
+
+      const url = window.Shopify.routes.root + '?sections=' + encodeURIComponent(sectionIds.join(','));
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return null;
+      return await res.json();
+    }
+
+    function dispatchHorizonCartUpdate({ itemCount, sections }) {
+      document.dispatchEvent(
+        new CustomEvent('cart:update', {
+          bubbles: true,
+          detail: {
+            sourceId: 'bundle-block-{{ block.id }}',
+            data: {
+              source: 'product-form-component',
+              itemCount: itemCount,
+              sections: sections || null,
+            },
+          },
+        })
+      );
+    }
+
+    function openHorizonDrawer() {
+      const drawer = document.querySelector('cart-drawer-component');
+      if (drawer && typeof drawer.open === 'function') {
+        drawer.open();
+        return;
+      }
+
+      const trigger = document.querySelector('[data-testid="cart-drawer-trigger"]');
+      if (trigger) trigger.click();
+    }
+
+    button.addEventListener('click', async function () {
+      errorEl.style.display = 'none';
+      button.disabled = true;
+
+      const originalText = button.textContent;
+      button.textContent = '{{ block.settings.button_loading_text }}';
+
+      const items = [];
+
+      selects.forEach((select) => {
+        const variantId = select.value;
+        if (variantId) items.push({ id: Number(variantId), quantity: 1 });
+      });
+
+      singles.forEach((input) => {
+        const variantId = input.value;
+        if (variantId) items.push({ id: Number(variantId), quantity: 1 });
+      });
+
+      if (!items.length) {
+        errorEl.textContent = 'Please select variants for all products';
+        errorEl.style.display = 'block';
+        button.disabled = false;
+        button.textContent = originalText;
+        return;
+      }
+
+      try {
+        const addRes = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ items }),
+        });
+
+        const addData = await addRes.json();
+        if (!addRes.ok) throw new Error(addData.description || addData.message || 'Failed to add bundle to cart');
+
+        const sections = await fetchSectionsForHorizon();
+
+        const itemCountAdded = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+        dispatchHorizonCartUpdate({ itemCount: itemCountAdded, sections });
+
+        if (cartAction === 'drawer') {
+          openHorizonDrawer();
+        } else {
+          window.location.href = window.Shopify.routes.root + 'cart';
+        }
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = 'block';
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    });
   });
-});
 </script>
 
 {% schema %}
@@ -338,60 +536,583 @@ document.addEventListener('DOMContentLoaded', function() {
   "name": "Socoba Bundle Block",
   "target": "section",
   "settings": [
-    { "type": "text", "id": "bundle_to_show_id", "label": "Bundle Short ID" },
-
-    { "type": "checkbox", "id": "show_image", "label": "Show Bundle Image", "default": true },
-    { "type": "image_picker", "id": "custom_bundle_image", "label": "Custom Bundle Image" },
-
+    {
+      "type": "text",
+      "id": "bundle_to_show_id",
+      "label": "Bundle Short ID",
+      "info": "Enter the short ID of the bundle to display"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_original_price",
+      "label": "Show original price (strikethrough)",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "max_width",
+      "min": 800,
+      "max": 1600,
+      "step": 50,
+      "default": 1200,
+      "unit": "px",
+      "label": "Maximum Width"
+    },
+    {
+      "type": "range",
+      "id": "column_gap",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "default": 0,
+      "unit": "px",
+      "label": "Gap Between Columns"
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "min": 0,
+      "max": 50,
+      "step": 2,
+      "default": 0,
+      "unit": "px",
+      "label": "Card Border Radius"
+    },
+    {
+      "type": "text",
+      "id": "box_shadow",
+      "label": "Box Shadow",
+      "default": "0 2px 20px rgba(0,0,0,0.08)",
+      "info": "CSS box-shadow value"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_image",
+      "label": "Show Bundle Image",
+      "default": true
+    },
+    {
+      "type": "image_picker",
+      "id": "custom_bundle_image",
+      "label": "Bundle Image"
+    },
     {
       "type": "select",
       "id": "image_position",
       "label": "Image Position",
-      "default": "left",
+      "default": "right",
       "options": [
-        { "value": "left", "label": "Left" },
-        { "value": "right", "label": "Right" }
+        {
+          "value": "left",
+          "label": "Left"
+        },
+        {
+          "value": "right",
+          "label": "Right"
+        }
       ]
     },
-
     {
       "type": "range",
       "id": "image_width",
+      "min": 30,
+      "max": 70,
+      "step": 5,
+      "default": 50,
+      "unit": "%",
+      "label": "Image Column Width"
+    },
+    {
+      "type": "range",
+      "id": "content_padding",
+      "min": 20,
+      "max": 100,
+      "step": 5,
+      "default": 50,
+      "unit": "px",
+      "label": "Content Padding"
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "min": 0,
+      "max": 150,
+      "step": 5,
+      "default": 60,
+      "unit": "px",
+      "label": "Section Padding Top"
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "min": 0,
+      "max": 150,
+      "step": 5,
+      "default": 60,
+      "unit": "px",
+      "label": "Section Padding Bottom"
+    },
+    {
+      "type": "range",
+      "id": "padding_left",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "default": 20,
+      "unit": "px",
+      "label": "Section Padding Left"
+    },
+    {
+      "type": "range",
+      "id": "padding_right",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "default": 20,
+      "unit": "px",
+      "label": "Section Padding Right"
+    },
+    {
+      "type": "range",
+      "id": "title_font_size",
       "min": 20,
       "max": 60,
-      "step": 5,
-      "default": 40,
-      "label": "Image Width (Percent)"
+      "step": 2,
+      "default": 32,
+      "unit": "px",
+      "label": "Title Font Size"
     },
-
-    { "type": "range", "id": "padding_top", "min": 0, "max": 100, "step": 5, "default": 30, "label": "Padding Top" },
-    { "type": "range", "id": "padding_bottom", "min": 0, "max": 100, "step": 5, "default": 30, "label": "Padding Bottom" },
-    { "type": "range", "id": "padding_left", "min": 0, "max": 100, "step": 5, "default": 0, "label": "Padding Left" },
-    { "type": "range", "id": "padding_right", "min": 0, "max": 100, "step": 5, "default": 0, "label": "Padding Right" },
-
-    { "type": "color", "id": "background_color", "label": "Section Background", "default": "#f9f9f9" },
-    { "type": "color", "id": "card_background", "label": "Card Background", "default": "#ffffff" },
-    { "type": "color", "id": "heading_color", "label": "Heading Color", "default": "#000000" },
-    { "type": "color", "id": "text_color", "label": "Text Color", "default": "#333333" },
-    { "type": "color", "id": "button_color", "label": "Button Background", "default": "#000000" },
-    { "type": "color", "id": "button_text_color", "label": "Button Text Color", "default": "#ffffff" },
-    { "type": "color", "id": "border_color", "label": "Border Color", "default": "#e5e5e5" },
-
+    {
+      "type": "select",
+      "id": "title_font_weight",
+      "label": "Title Font Weight",
+      "default": "600",
+      "options": [
+        {
+          "value": "400",
+          "label": "Normal"
+        },
+        {
+          "value": "500",
+          "label": "Medium"
+        },
+        {
+          "value": "600",
+          "label": "Semi Bold"
+        },
+        {
+          "value": "700",
+          "label": "Bold"
+        }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "title_margin_bottom",
+      "min": 10,
+      "max": 60,
+      "step": 5,
+      "default": 30,
+      "unit": "px",
+      "label": "Title Bottom Margin"
+    },
+    {
+      "type": "range",
+      "id": "product_name_font_size",
+      "min": 12,
+      "max": 24,
+      "step": 1,
+      "default": 16,
+      "unit": "px",
+      "label": "Product Name Font Size"
+    },
+    {
+      "type": "select",
+      "id": "product_name_font_weight",
+      "label": "Product Name Font Weight",
+      "default": "500",
+      "options": [
+        {
+          "value": "400",
+          "label": "Normal"
+        },
+        {
+          "value": "500",
+          "label": "Medium"
+        },
+        {
+          "value": "600",
+          "label": "Semi Bold"
+        }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "price_font_size",
+      "min": 12,
+      "max": 24,
+      "step": 1,
+      "default": 16,
+      "unit": "px",
+      "label": "Price Font Size"
+    },
+    {
+      "type": "select",
+      "id": "price_font_weight",
+      "label": "Price Font Weight",
+      "default": "500",
+      "options": [
+        {
+          "value": "400",
+          "label": "Normal"
+        },
+        {
+          "value": "500",
+          "label": "Medium"
+        },
+        {
+          "value": "600",
+          "label": "Semi Bold"
+        }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "products_margin_bottom",
+      "min": 10,
+      "max": 60,
+      "step": 5,
+      "default": 25,
+      "unit": "px",
+      "label": "Products List Bottom Margin"
+    },
+    {
+      "type": "range",
+      "id": "product_item_padding",
+      "min": 10,
+      "max": 40,
+      "step": 2,
+      "default": 18,
+      "unit": "px",
+      "label": "Product Item Padding"
+    },
+    {
+      "type": "range",
+      "id": "divider_thickness",
+      "min": 0,
+      "max": 5,
+      "step": 1,
+      "default": 1,
+      "unit": "px",
+      "label": "Divider Line Thickness"
+    },
+    {
+      "type": "range",
+      "id": "selector_padding",
+      "min": 6,
+      "max": 20,
+      "step": 2,
+      "default": 10,
+      "unit": "px",
+      "label": "Selector Padding"
+    },
+    {
+      "type": "range",
+      "id": "selector_border_width",
+      "min": 1,
+      "max": 3,
+      "step": 1,
+      "default": 1,
+      "unit": "px",
+      "label": "Selector Border Width"
+    },
+    {
+      "type": "range",
+      "id": "selector_border_radius",
+      "min": 0,
+      "max": 20,
+      "step": 2,
+      "default": 6,
+      "unit": "px",
+      "label": "Selector Border Radius"
+    },
+    {
+      "type": "range",
+      "id": "selector_font_size",
+      "min": 12,
+      "max": 18,
+      "step": 1,
+      "default": 14,
+      "unit": "px",
+      "label": "Selector Font Size"
+    },
+    {
+      "type": "range",
+      "id": "footer_border_thickness",
+      "min": 0,
+      "max": 5,
+      "step": 1,
+      "default": 2,
+      "unit": "px",
+      "label": "Footer Border Thickness"
+    },
+    {
+      "type": "range",
+      "id": "footer_padding_top",
+      "min": 10,
+      "max": 50,
+      "step": 5,
+      "default": 25,
+      "unit": "px",
+      "label": "Footer Top Padding"
+    },
+    {
+      "type": "range",
+      "id": "total_label_font_size",
+      "min": 12,
+      "max": 20,
+      "step": 1,
+      "default": 14,
+      "unit": "px",
+      "label": "Total Label Font Size"
+    },
+    {
+      "type": "range",
+      "id": "total_price_font_size",
+      "min": 18,
+      "max": 40,
+      "step": 2,
+      "default": 24,
+      "unit": "px",
+      "label": "Total Price Font Size"
+    },
+    {
+      "type": "select",
+      "id": "total_font_weight",
+      "label": "Total Font Weight",
+      "default": "600",
+      "options": [
+        {
+          "value": "500",
+          "label": "Medium"
+        },
+        {
+          "value": "600",
+          "label": "Semi Bold"
+        },
+        {
+          "value": "700",
+          "label": "Bold"
+        }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "total_margin_bottom",
+      "min": 10,
+      "max": 40,
+      "step": 5,
+      "default": 20,
+      "unit": "px",
+      "label": "Total Bottom Margin"
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button Text",
+      "default": "Buy Now"
+    },
+    {
+      "type": "text",
+      "id": "button_loading_text",
+      "label": "Button Loading Text",
+      "default": "Adding..."
+    },
+    {
+      "type": "range",
+      "id": "button_padding",
+      "min": 10,
+      "max": 30,
+      "step": 2,
+      "default": 18,
+      "unit": "px",
+      "label": "Button Padding"
+    },
+    {
+      "type": "range",
+      "id": "button_font_size",
+      "min": 12,
+      "max": 22,
+      "step": 1,
+      "default": 16,
+      "unit": "px",
+      "label": "Button Font Size"
+    },
+    {
+      "type": "select",
+      "id": "button_font_weight",
+      "label": "Button Font Weight",
+      "default": "600",
+      "options": [
+        {
+          "value": "400",
+          "label": "Normal"
+        },
+        {
+          "value": "500",
+          "label": "Medium"
+        },
+        {
+          "value": "600",
+          "label": "Semi Bold"
+        },
+        {
+          "value": "700",
+          "label": "Bold"
+        }
+      ]
+    },
+    {
+      "type": "range",
+      "id": "button_border_radius",
+      "min": 0,
+      "max": 50,
+      "step": 2,
+      "default": 8,
+      "unit": "px",
+      "label": "Button Border Radius"
+    },
+    {
+      "type": "select",
+      "id": "button_text_transform",
+      "label": "Button Text Transform",
+      "default": "none",
+      "options": [
+        {
+          "value": "none",
+          "label": "None"
+        },
+        {
+          "value": "uppercase",
+          "label": "Uppercase"
+        },
+        {
+          "value": "capitalize",
+          "label": "Capitalize"
+        }
+      ]
+    },
     {
       "type": "select",
       "id": "cart_action",
       "label": "After Add to Cart",
       "default": "drawer",
       "options": [
-        { "value": "drawer", "label": "Open Cart Drawer" },
-        { "value": "page", "label": "Go to Cart Page" }
+        {
+          "value": "drawer",
+          "label": "Open Cart Drawer"
+        },
+        {
+          "value": "page",
+          "label": "Go to Cart Page"
+        }
       ]
     },
-
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Section Background",
+      "default": "#f5f5f0"
+    },
+    {
+      "type": "color",
+      "id": "card_background",
+      "label": "Card Background",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "heading_color",
+      "label": "Heading Color",
+      "default": "#2c2c2c"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text Color",
+      "default": "#4a4a4a"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border/Divider Color",
+      "default": "#e5e5e5"
+    },
+    {
+      "type": "color",
+      "id": "button_color",
+      "label": "Button Background",
+      "default": "#6b5d4f"
+    },
+    {
+      "type": "color",
+      "id": "button_hover_color",
+      "label": "Button Hover Background",
+      "default": "#5a4d41"
+    },
+    {
+      "type": "color",
+      "id": "button_text_color",
+      "label": "Button Text Color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "selector_background",
+      "label": "Variant Selector Background",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "error_color",
+      "label": "Error Message Color",
+      "default": "#d32f2f"
+    },
+    {
+      "type": "range",
+      "id": "mobile_breakpoint",
+      "min": 480,
+      "max": 1024,
+      "step": 16,
+      "default": 768,
+      "unit": "px",
+      "label": "Mobile Breakpoint"
+    },
+    {
+      "type": "range",
+      "id": "mobile_content_padding",
+      "min": 15,
+      "max": 50,
+      "step": 5,
+      "default": 25,
+      "unit": "px",
+      "label": "Mobile Content Padding"
+    },
+    {
+      "type": "range",
+      "id": "mobile_title_font_size",
+      "min": 18,
+      "max": 36,
+      "step": 2,
+      "default": 24,
+      "unit": "px",
+      "label": "Mobile Title Font Size"
+    },
     {
       "type": "textarea",
       "id": "custom_css",
-      "label": "Custom CSS"
+      "label": "Custom CSS",
+      "info": "Add custom CSS to override default styles"
     }
   ]
 }

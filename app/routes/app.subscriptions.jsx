@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import {
@@ -159,10 +159,12 @@ export async function action({ request }) {
 
       const newGroup = responseJson.data.sellingPlanGroupCreate.sellingPlanGroup;
       const batchSize = 50; 
+      let productsAttached = 0;
+      const attachErrors = [];
       
       for (let i = 0; i < targetIds.length; i += batchSize) {
         const batch = targetIds.slice(i, i + batchSize);
-        await admin.graphql(
+        const attachResponse = await admin.graphql(
           `#graphql
           mutation sellingPlanGroupAddProducts($id: ID!, $productIds: [ID!]!) {
             sellingPlanGroupAddProducts(id: $id, productIds: $productIds) {
@@ -171,6 +173,17 @@ export async function action({ request }) {
           }`,
           { variables: { id: newGroup.id, productIds: batch } }
         );
+        const attachJson = await attachResponse.json();
+        if (attachJson.errors?.length) {
+          attachErrors.push(...attachJson.errors.map((e) => e.message || "Unknown attach error"));
+          continue;
+        }
+        const userErrors = attachJson.data?.sellingPlanGroupAddProducts?.userErrors || [];
+        if (userErrors.length > 0) {
+          attachErrors.push(...userErrors.map((e) => e.message || "Unknown attach error"));
+          continue;
+        }
+        productsAttached += batch.length;
       }
 
       const shopifyPlanIdsMap = {};
@@ -193,7 +206,11 @@ export async function action({ request }) {
         }
       });
 
-      return Response.json({ success: true, productsAttached: targetIds.length });
+      const warning = attachErrors.length > 0
+        ? `Attached ${productsAttached}/${targetIds.length} products. Some products failed to attach.`
+        : null;
+
+      return Response.json({ success: true, productsAttached, warning });
     } catch (error) {
       return Response.json({ error: "System Error: " + error.message }, { status: 500 });
     }
@@ -231,6 +248,7 @@ export default function Subscriptions() {
   const fetcher = useFetcher();
   const collectionFetcher = useFetcher();
   const shopify = useAppBridge();
+  const revalidator = useRevalidator();
   
   const [showModal, setShowModal] = useState(false);
   const [subscriptionType, setSubscriptionType] = useState("product");
@@ -302,7 +320,11 @@ export default function Subscriptions() {
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success) {
       shopify.toast.show(`Success! Applied to ${fetcher.data.productsAttached} products.`);
+      if (fetcher.data.warning) {
+        shopify.toast.show(fetcher.data.warning, { isError: true });
+      }
       handleCancel();
+      revalidator.revalidate();
     }
     if (fetcher.state === "idle" && fetcher.data?.error) {
       shopify.toast.show(fetcher.data.error, { isError: true });
