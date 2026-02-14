@@ -136,6 +136,11 @@ export default function CustomerPortal() {
   }
 
   const { customer, contracts } = data;
+  const sortedContracts = [...contracts].sort((a, b) => {
+    const aDate = a.nextBillingDate ? new Date(a.nextBillingDate).getTime() : 0;
+    const bDate = b.nextBillingDate ? new Date(b.nextBillingDate).getTime() : 0;
+    return bDate - aDate;
+  });
 
   return (
     <div className="subscription-portal" style={styles.container}>
@@ -145,12 +150,12 @@ export default function CustomerPortal() {
       {actionData?.success && <div style={styles.success}>Your subscription has been cancelled successfully.</div>}
       {actionData?.error && <div style={styles.error}>{actionData.error}</div>}
 
-      {contracts.length === 0 ? (
+      {sortedContracts.length === 0 ? (
         <div style={styles.card}>
           <p style={{ textAlign: "center" }}>You don't have any active subscriptions yet.</p>
         </div>
       ) : (
-        contracts.map(contract => (
+        sortedContracts.map(contract => (
           <div key={contract.id} style={styles.card}>
             <div style={styles.header}>
               <span style={styles.title}>

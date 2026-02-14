@@ -249,6 +249,10 @@ export default function Subscriptions() {
   const collectionFetcher = useFetcher();
   const shopify = useAppBridge();
   const revalidator = useRevalidator();
+
+  const sortedSubscriptions = [...subscriptions].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
   
   const [showModal, setShowModal] = useState(false);
   const [subscriptionType, setSubscriptionType] = useState("product");
@@ -363,8 +367,8 @@ export default function Subscriptions() {
               {subscriptions.length === 0 ? (
                 <EmptyState heading="No subscriptions" action={{ content: 'Create Subscription', onAction: () => setShowModal(true) }} image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png" />
               ) : (
-                <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={subscriptions.length} headings={[{ title: 'Target' }, { title: 'Plans' }, { title: 'Action' }]}>
-                  {subscriptions.map((sub, index) => (
+                <IndexTable resourceName={{ singular: 'sub', plural: 'subs' }} itemCount={sortedSubscriptions.length} headings={[{ title: 'Target' }, { title: 'Plans' }, { title: 'Action' }]}>
+                  {sortedSubscriptions.map((sub, index) => (
                     <IndexTable.Row id={sub.id} key={sub.id} position={index}>
                       <IndexTable.Cell><Text fontWeight="bold">{sub.targetTitle}</Text></IndexTable.Cell>
                       <IndexTable.Cell>
