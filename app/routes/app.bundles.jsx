@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { useLoaderData, useSubmit, useActionData } from "react-router";
+import { useState, useEffect } from "react";
+import { useLoaderData, useSubmit, useActionData, useRevalidator } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
   AppProvider, Page, Layout, Card, Button, Text, TextField, BlockStack,
-  InlineStack, IndexTable, EmptyState, Thumbnail, Banner
+  InlineStack, IndexTable, EmptyState, Thumbnail, Banner, Modal, FormLayout
 } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -72,7 +72,117 @@ export async function action({ request }) {
         
         await syncMetafields(admin, session.shop);
         
-        return { success: true };
+        return { success: true, deleted: true };
+    }
+
+    // --- UPDATE FLOW ---
+    if (actionType === "update") {
+        const bundleId = formData.get("id");
+        const title = formData.get("title");
+        const products = JSON.parse(formData.get("products"));
+
+        if (!bundleId) return { error: "Missing bundle ID" };
+
+        let totalOriginal = 0;
+        let totalBundle = 0;
+        const productIds = [];
+
+        products.forEach(p => {
+            totalOriginal += parseFloat(p.originalPrice || 0);
+            totalBundle += parseFloat(p.bundlePrice || 0);
+            productIds.push(p.productId);
+        });
+
+        const discountValue = totalOriginal - totalBundle;
+        let createdDiscountId = null;
+
+        const existingBundle = await db.bundle.findUnique({ where: { id: bundleId } });
+        if (!existingBundle) return { error: "Bundle not found" };
+
+        if (existingBundle?.discountId) {
+            await admin.graphql(
+                `#graphql
+                mutation discountAutomaticDelete($id: ID!) {
+                  discountAutomaticDelete(id: $id) {
+                    userErrors { field message }
+                  }
+                }`,
+                { variables: { id: existingBundle.discountId } }
+            );
+        }
+
+        // Add Tags for selected products
+        for (const pid of productIds) {
+            await admin.graphql(
+                `#graphql
+                mutation addTags($id: ID!, $tags: [String!]!) {
+                    tagsAdd(id: $id, tags: $tags) {
+                        node { id }
+                    }
+                }`,
+                { variables: { id: pid, tags: ["Bundle-Item"] } }
+            );
+        }
+
+        // Create new Automatic Discount (if any savings)
+        if (discountValue > 0) {
+            const response = await admin.graphql(
+                `#graphql
+                mutation discountAutomaticBasicCreate($automaticBasicDiscount: DiscountAutomaticBasicInput!) {
+                  discountAutomaticBasicCreate(automaticBasicDiscount: $automaticBasicDiscount) {
+                    automaticDiscountNode {
+                       id
+                       automaticDiscount {
+                         ... on DiscountAutomaticBasic { title }
+                       }
+                    }
+                    userErrors { field message }
+                  }
+                }`,
+                {
+                  variables: {
+                    automaticBasicDiscount: {
+                      title: `${title} (Save ${discountValue.toFixed(2)})`,
+                      startsAt: new Date().toISOString(),
+                      minimumRequirement: {
+                        quantity: { greaterThanOrEqualToQuantity: products.length.toString() }
+                      },
+                      customerGets: {
+                        value: { 
+                            discountAmount: { 
+                                amount: discountValue.toFixed(2), 
+                                appliesOnEachItem: false 
+                            } 
+                        },
+                        items: { 
+                            products: { productsToAdd: productIds } 
+                        }
+                      }
+                    }
+                  }
+                }
+            );
+
+            const responseJson = await response.json();
+            const errors = responseJson.data?.discountAutomaticBasicCreate?.userErrors || [];
+            if (errors.length > 0) {
+                return { error: `Shopify API Error: ${errors[0].message}` };
+            }
+            createdDiscountId = responseJson.data?.discountAutomaticBasicCreate?.automaticDiscountNode?.id;
+        }
+
+        await db.bundle.update({
+            where: { id: bundleId },
+            data: {
+                title,
+                price: totalBundle.toFixed(2),
+                productIds: JSON.stringify(products),
+                discountId: createdDiscountId,
+            }
+        });
+
+        await syncMetafields(admin, session.shop);
+        return { success: true, updated: true };
     }
 
     // --- CREATE FLOW ---
@@ -167,7 +277,7 @@ export async function action({ request }) {
         });
 
         await syncMetafields(admin, session.shop);
-        return { success: true };
+        return { success: true, created: true };
     }
   } catch (error) {
       console.error("SERVER ERROR:", error);
@@ -236,30 +346,45 @@ export default function BundlePage() {
   const actionData = useActionData();
   const submit = useSubmit();
   const shopify = useAppBridge();
+  const revalidator = useRevalidator();
   
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editProducts, setEditProducts] = useState([]);
+  const [editLoading, setEditLoading] = useState(false);
+
+  const mapSelectionToProducts = (selection) => selection.map(p => ({
+    productId: p.id,
+    handle: p.handle,
+    title: p.title,
+    image: p.images?.[0]?.originalSrc || "",
+    originalPrice: parseFloat(p.variants?.[0]?.price || "0"),
+    bundlePrice: parseFloat(p.variants?.[0]?.price || "0")
+  }));
+
   const handleSelectProducts = async () => {
     const selection = await shopify.resourcePicker({ type: "product", multiple: true });
     if (selection) {
-      const products = selection.map(p => ({
-        productId: p.id,
-        handle: p.handle,
-        title: p.title,
-        image: p.images?.[0]?.originalSrc || "",
-        originalPrice: parseFloat(p.variants?.[0]?.price || "0"),
-        bundlePrice: parseFloat(p.variants?.[0]?.price || "0") 
-      }));
-      setSelectedProducts(products);
+      setSelectedProducts(mapSelectionToProducts(selection));
     }
   };
 
-  const updateProductPrice = (index, newPrice) => {
-      const updated = [...selectedProducts];
+  const handleSelectEditProducts = async () => {
+    const selection = await shopify.resourcePicker({ type: "product", multiple: true });
+    if (selection) {
+      setEditProducts(mapSelectionToProducts(selection));
+    }
+  };
+
+  const updateProductPrice = (list, setList, index, newPrice) => {
+      const updated = [...list];
       updated[index].bundlePrice = parseFloat(newPrice);
-      setSelectedProducts(updated);
+      setList(updated);
   };
 
   const handleSave = () => {
@@ -274,17 +399,70 @@ export default function BundlePage() {
     submit(data, { method: "POST" });
   };
 
-  // Reset loading state if error comes back
-  if (loading && actionData?.error) {
-     setLoading(false);
-  }
-  // Reset UI on success
-  if (loading && actionData?.success) {
-     setLoading(false);
-     setTitle("");
-     setSelectedProducts([]);
-     shopify.toast.show("Bundle Saved!");
-  }
+  const handleEditOpen = (bundle) => {
+    const products = JSON.parse(bundle.productIds || "[]").map((p) => ({
+      ...p,
+      originalPrice: parseFloat(p.originalPrice || 0),
+      bundlePrice: parseFloat(p.bundlePrice || 0),
+    }));
+    setEditId(bundle.id);
+    setEditTitle(bundle.title || "");
+    setEditProducts(products);
+    setEditOpen(true);
+  };
+
+  const handleEditClose = () => {
+    setEditOpen(false);
+    setEditId(null);
+    setEditTitle("");
+    setEditProducts([]);
+    setEditLoading(false);
+  };
+
+  const handleUpdate = () => {
+    if (!editId) return;
+    if (editProducts.length < 2) return shopify.toast.show("Select 2+ products", { isError: true });
+    if (!editTitle) return shopify.toast.show("Enter title", { isError: true });
+
+    setEditLoading(true);
+    const data = new FormData();
+    data.append("action", "update");
+    data.append("id", editId);
+    data.append("title", editTitle);
+    data.append("products", JSON.stringify(editProducts));
+    submit(data, { method: "POST" });
+  };
+
+  useEffect(() => {
+    if (!actionData) return;
+
+    if (actionData?.error) {
+      setLoading(false);
+      setEditLoading(false);
+      return;
+    }
+
+    if (actionData?.success) {
+      setLoading(false);
+      setEditLoading(false);
+      revalidator.revalidate();
+    }
+
+    if (actionData?.created) {
+      setTitle("");
+      setSelectedProducts([]);
+      shopify.toast.show("Bundle Saved!");
+    }
+
+    if (actionData?.updated) {
+      shopify.toast.show("Bundle Updated!");
+      handleEditClose();
+    }
+
+    if (actionData?.deleted) {
+      shopify.toast.show("Bundle Deleted!");
+    }
+  }, [actionData, revalidator, shopify, handleEditClose]);
 
   const handleDelete = (id) => {
       if(confirm("Delete bundle and remove discount?")) {
@@ -300,7 +478,7 @@ export default function BundlePage() {
       <Page title="Fixed Bundles">
         <BlockStack gap="400">
             {actionData?.error && <Banner tone="critical" title="Error">{actionData.error}</Banner>}
-            {actionData?.success && <Banner tone="success" title="Success">Bundle Saved!</Banner>}
+            {actionData?.created && <Banner tone="success" title="Success">Bundle Saved!</Banner>}
 
             <Layout>
             <Layout.Section>
@@ -325,7 +503,7 @@ export default function BundlePage() {
                                     <TextField 
                                         type="number" label="Bundle Price" labelHidden 
                                         value={p.bundlePrice} 
-                                        onChange={(val) => updateProductPrice(index, val)}
+                                        onChange={(val) => updateProductPrice(selectedProducts, setSelectedProducts, index, val)}
                                         prefix={currencySymbol}
                                     />
                                 </div>
@@ -340,13 +518,18 @@ export default function BundlePage() {
             </Layout.Section>
             <Layout.Section>
                 <Card padding="0">
-                    <IndexTable resourceName={{ singular: 'bundle', plural: 'bundles' }} itemCount={bundles.length} headings={[{ title: 'ID' }, { title: 'Title' }, { title: 'Price' }, { title: 'Action' }]}>
+                    <IndexTable resourceName={{ singular: 'bundle', plural: 'bundles' }} itemCount={bundles.length} headings={[{ title: 'ID' }, { title: 'Title' }, { title: 'Price' }, { title: 'Actions' }]}>
                     {bundles.map((bundle, index) => (
                         <IndexTable.Row id={bundle.id} key={bundle.id} position={index}>
                         <IndexTable.Cell>{bundle.shortId || bundle.id}</IndexTable.Cell>
                         <IndexTable.Cell><Text fontWeight="bold">{bundle.title}</Text></IndexTable.Cell>
                         <IndexTable.Cell>{currencySymbol}{bundle.price}</IndexTable.Cell>
-                        <IndexTable.Cell><Button tone="critical" onClick={() => handleDelete(bundle.id)}>Delete</Button></IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <InlineStack gap="200">
+                            <Button onClick={() => handleEditOpen(bundle)}>Edit</Button>
+                            <Button tone="critical" onClick={() => handleDelete(bundle.id)}>Delete</Button>
+                          </InlineStack>
+                        </IndexTable.Cell>
                         </IndexTable.Row>
                     ))}
                     </IndexTable>
@@ -354,6 +537,47 @@ export default function BundlePage() {
             </Layout.Section>
             </Layout>
         </BlockStack>
+        <Modal
+          open={editOpen}
+          onClose={handleEditClose}
+          title="Edit Bundle"
+          primaryAction={{ content: "Save Changes", onAction: handleUpdate, loading: editLoading }}
+          secondaryActions={[{ content: "Cancel", onAction: handleEditClose }]}
+        >
+          <Modal.Section>
+            <FormLayout>
+              <TextField label="Bundle Title" value={editTitle} onChange={setEditTitle} autoComplete="off" />
+              <Button onClick={handleSelectEditProducts}>Select Products</Button>
+              {editProducts.length > 0 && (
+                <BlockStack gap="400">
+                  <Text fontWeight="bold">Set Price Per Item:</Text>
+                  {editProducts.map((p, index) => (
+                    <InlineStack key={p.productId} align="space-between" blockAlign="center">
+                      <InlineStack gap="200" blockAlign="center">
+                        {p.image && <Thumbnail source={p.image} size="small" alt={p.title} />}
+                        <BlockStack>
+                          <Text fontWeight="bold">{p.title}</Text>
+                          <Text tone="subdued">Original: {currencySymbol}{parseFloat(p.originalPrice || 0).toFixed(2)}</Text>
+                        </BlockStack>
+                      </InlineStack>
+                      <div style={{ width: '150px' }}>
+                        <TextField
+                          type="number"
+                          label="Bundle Price"
+                          labelHidden
+                          value={p.bundlePrice}
+                          onChange={(val) => updateProductPrice(editProducts, setEditProducts, index, val)}
+                          prefix={currencySymbol}
+                        />
+                      </div>
+                    </InlineStack>
+                  ))}
+                  <Banner tone="info">Total: <b>{currencySymbol}{editProducts.reduce((a, b) => a + (parseFloat(b.bundlePrice) || 0), 0).toFixed(2)}</b></Banner>
+                </BlockStack>
+              )}
+            </FormLayout>
+          </Modal.Section>
+        </Modal>
       </Page>
     </AppProvider>
   );
