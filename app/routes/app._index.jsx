@@ -289,6 +289,15 @@ export default function Index() {
                     <Text as="p" tone="subdued">
                       Tip: You can add the bundle block to product pages or a landing page to promote bundles.
                     </Text>
+
+                    <Text as="p" tone="subdued">
+                      Powered by Socoba. Visit{" "}
+                      <a href="https://socoba.co" target="_blank" rel="noreferrer">
+                        socoba.co
+                      </a>{" "}
+                      or contact{" "}
+                      <a href="mailto:socoba.apps@gmail.com">socoba.apps@gmail.com</a>.
+                    </Text>
                   </BlockStack>
                 </BlockStack>
               </Card>

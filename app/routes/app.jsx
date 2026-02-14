@@ -19,6 +19,7 @@ export default function App() {
         <s-link href="/app/subscriptions">Subscription Manager</s-link>
         <s-link href="/app/contracts">Customer Contracts</s-link>
         <s-link href="/app/bundles">Fixed Bundles</s-link>
+        <s-link href="/app/how-to-use">How to Use</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
