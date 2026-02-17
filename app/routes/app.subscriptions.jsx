@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
-import { useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { useFetcher, useLoaderData, useRevalidator, Link } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
+import { getBillingInfo, canUseFeature } from "../helpers/billing.server";
 import {
   AppProvider, Page, Layout, Card, Button, Text, TextField, Select,
   BlockStack, InlineStack, Badge, IndexTable, Modal, FormLayout,
@@ -14,6 +15,11 @@ import db from "../db.server";
 
 // --- LOADER ---
 export async function loader({ request }) {
+  const billing = await getBillingInfo(request);
+  if (!canUseFeature(billing, "SUBSCRIPTION")) {
+    return Response.json({ gated: true, billing, subscriptions: [], products: [], collections: [] });
+  }
+
   const { admin, session } = await authenticate.admin(request);
 
   const response = await admin.graphql(
@@ -40,11 +46,16 @@ export async function loader({ request }) {
     orderBy: { createdAt: 'desc' }
   });
   
-  return Response.json({ subscriptions, products, collections });
+  return Response.json({ subscriptions, products, collections, billing, gated: false });
 }
 
 // --- ACTION ---
 export async function action({ request }) {
+  const billing = await getBillingInfo(request);
+  if (!canUseFeature(billing, "SUBSCRIPTION")) {
+    return Response.json({ error: "Your plan does not allow Subscriptions." }, { status: 403 });
+  }
+
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const actionType = formData.get("action");
@@ -244,7 +255,7 @@ export function ErrorBoundary() {
 import { useNavigation } from "react-router";
 
 export default function Subscriptions() {
-  const { subscriptions, products, collections } = useLoaderData();
+  const { subscriptions, products, collections, billing, gated } = useLoaderData();
   const fetcher = useFetcher();
   const collectionFetcher = useFetcher();
   const shopify = useAppBridge();
@@ -347,6 +358,31 @@ export default function Subscriptions() {
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px' }}>
                   <Spinner accessibilityLabel="Loading subscriptions" size="large" />
                 </div>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        </Page>
+      </AppProvider>
+    );
+  }
+
+  if (gated) {
+    return (
+      <AppProvider i18n={enTranslations}>
+        <Page title="Subscriptions">
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">Subscriptions Locked</Text>
+                  <Text as="p">
+                    Your current plan does not allow Subscriptions. If you are on the Basic plan,
+                    choose Subscriptions in Plan & Billing. For full access, upgrade to Premium.
+                  </Text>
+                  <Link to="/app/plan">
+                    <Button variant="primary">Go to Plan & Billing</Button>
+                  </Link>
+                </BlockStack>
               </Card>
             </Layout.Section>
           </Layout>

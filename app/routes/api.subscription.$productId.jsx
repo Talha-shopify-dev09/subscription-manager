@@ -1,10 +1,15 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { getBillingInfoWithAdmin, canUseFeature } from "../helpers/billing.server";
 
 export async function loader({ request, params }) {
   try {
     // 1. Authenticate (This extracts the session/shop context)
-    const { session } = await authenticate.public.appProxy(request);
+    const { session, admin } = await authenticate.public.appProxy(request);
+    const billing = await getBillingInfoWithAdmin({ admin, shop: session.shop });
+    if (!canUseFeature(billing, "SUBSCRIPTION")) {
+      return Response.json({ subscription: null });
+    }
 
     const rawId = params.productId;
     if (!rawId) {

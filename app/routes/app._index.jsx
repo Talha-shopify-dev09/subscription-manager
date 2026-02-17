@@ -1,5 +1,6 @@
 import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
+import { getBillingInfo } from "../helpers/billing.server";
 import {
   AppProvider,
   Page,
@@ -19,6 +20,21 @@ import db from "../db.server";
 export const loader = async ({ request }) => {
   // 1. Authenticate the admin session
   const { session } = await authenticate.admin(request);
+  const billing = await getBillingInfo(request);
+
+  if (billing.billingRequired) {
+    return Response.json({
+      billing,
+      activeCount: 0,
+      pausedCount: 0,
+      cancelledCount: 0,
+      bundlePurchaseCount: 0,
+      totalBundleAmount: 0,
+      totalActiveSubscriptionAmount: 0,
+      totalSubscriptionEarnings: 0,
+      failedContracts: [],
+    });
+  }
 
   try {
         const [activeContracts, pausedCount, cancelledCount, bundleSalesCount, bundleSalesAmount, allTransactions, failedContractsData] = await Promise.all([
@@ -66,14 +82,16 @@ export const loader = async ({ request }) => {
           totalBundleAmount,
           totalActiveSubscriptionAmount,
           totalSubscriptionEarnings,
-          failedContracts // Include failed contracts in the response
+          failedContracts, // Include failed contracts in the response
+          billing,
         });
   } catch (error) {
     console.error("Dashboard Loader Error:", error);
     return Response.json({
       activeCount: 0, pausedCount: 0, cancelledCount: 0, bundlePurchaseCount: 0,
       totalBundleAmount: 0, totalActiveSubscriptionAmount: 0, totalSubscriptionEarnings: 0,
-      failedContracts: [] // Ensure failedContracts is always present
+      failedContracts: [], // Ensure failedContracts is always present
+      billing,
     });
   }
 };
@@ -88,7 +106,8 @@ export default function Index() {
     totalBundleAmount,
     totalActiveSubscriptionAmount,
     totalSubscriptionEarnings,
-    failedContracts // Destructure failedContracts from loader data
+    failedContracts, // Destructure failedContracts from loader data
+    billing,
   } = useLoaderData();
 
   const formatCurrency = (amount) => new Intl.NumberFormat('en-US', {
@@ -100,6 +119,31 @@ export default function Index() {
     <AppProvider i18n={enTranslations}>
       <Page title="Socoba Dashboard">
         <BlockStack gap="500">
+          {billing && !billing.billingRequired && (
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd">Plan Status</Text>
+                <Text as="p">
+                  {billing.isDevStore
+                    ? "Dev store (full access)"
+                    : billing.activePlanName || "No active plan"}
+                </Text>
+                {!billing.isDevStore && billing.activePlanName === "Basic" && (
+                  <Text as="p">
+                    Basic feature:{" "}
+                    {billing.basicFeatureMode
+                      ? billing.basicFeatureMode === "BUNDLE"
+                        ? "Bundles only"
+                        : "Subscriptions only"
+                      : "Not selected"}
+                  </Text>
+                )}
+                {billing.activePlanName === "Premium" && (
+                  <Text as="p">Premium: Bundles + Subscriptions enabled</Text>
+                )}
+              </BlockStack>
+            </Card>
+          )}
           
           {/* --- ANALYTICS DASHBOARD --- */}
           <Layout>

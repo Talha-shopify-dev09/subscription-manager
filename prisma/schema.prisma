@@ -24,6 +24,11 @@ enum ContractStatus {
   FAILED
 }
 
+enum BasicFeatureMode {
+  BUNDLE
+  SUBSCRIPTION
+}
+
 // --- SESSION MODEL ---
 model Session {
   id              String    @id
@@ -151,4 +156,14 @@ model BundleSale {
   @@index([shop])
   @@index([orderId])
   @@index([bundleId])
+}
+
+// --- SHOP SETTINGS MODEL ---
+model ShopSetting {
+  id               String           @id @default(uuid())
+  shop             String           @unique
+  planName         String?
+  basicFeatureMode BasicFeatureMode?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 }

@@ -1,11 +1,16 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { getBillingInfoWithAdmin, canUseFeature } from "../helpers/billing.server";
 
 export async function loader({ request }) {
   // 1. SECURE: Authenticate the request
   // This verifies the request came from your Storefront (using the HMAC signature)
   // 'admin' allows us to query Shopify to check collections
   const { admin, session } = await authenticate.public.appProxy(request);
+  const billing = await getBillingInfoWithAdmin({ admin, shop: session.shop });
+  if (!canUseFeature(billing, "SUBSCRIPTION")) {
+    return Response.json({ subscription: null });
+  }
 
   const url = new URL(request.url);
   const rawId = url.searchParams.get('productId');

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { useLoaderData, useSubmit, useActionData, useRevalidator } from "react-router";
+import { useLoaderData, useSubmit, useActionData, useRevalidator, Link } from "react-router";
 import { authenticate } from "../shopify.server";
+import { getBillingInfo, canUseFeature } from "../helpers/billing.server";
 import {
   AppProvider, Page, Layout, Card, Button, Text, TextField, BlockStack,
   InlineStack, IndexTable, EmptyState, Thumbnail, Banner, Modal, FormLayout
@@ -11,6 +12,11 @@ import db from "../db.server";
 
 // 1. LOADER: Fixed GraphQL Query
 export async function loader({ request }) {
+  const billing = await getBillingInfo(request);
+  if (!canUseFeature(billing, "BUNDLE")) {
+    return { bundles: [], currencySymbol: "$", shopId: null, billing, gated: true };
+  }
+
   const { session, admin } = await authenticate.admin(request);
   
   const shopResponse = await admin.graphql(
@@ -37,11 +43,16 @@ export async function loader({ request }) {
     orderBy: { createdAt: 'desc' }
   });
 
-  return { bundles, currencySymbol, shopId };
+  return { bundles, currencySymbol, shopId, billing, gated: false };
 }
 
 // 2. ACTION: Full Lifecycle Management
 export async function action({ request }) {
+  const billing = await getBillingInfo(request);
+  if (!canUseFeature(billing, "BUNDLE")) {
+    return { error: "Your plan does not allow Bundles." };
+  }
+
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const actionType = formData.get("action");
@@ -342,7 +353,7 @@ async function generateShortId(shopDomain) {
 
 // 3. UI COMPONENT
 export default function BundlePage() {
-  const { bundles, currencySymbol } = useLoaderData();
+  const { bundles, currencySymbol, billing, gated } = useLoaderData();
   const actionData = useActionData();
   const submit = useSubmit();
   const shopify = useAppBridge();
@@ -472,6 +483,31 @@ export default function BundlePage() {
         submit(data, { method: "POST" });
       }
   };
+
+  if (gated) {
+    return (
+      <AppProvider i18n={enTranslations}>
+        <Page title="Fixed Bundles">
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">Bundles Locked</Text>
+                  <Text as="p">
+                    Your current plan does not allow Bundles. If you are on the Basic plan,
+                    choose Bundles in Plan & Billing. For full access, upgrade to Premium.
+                  </Text>
+                  <Link to="/app/plan">
+                    <Button variant="primary">Go to Plan & Billing</Button>
+                  </Link>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        </Page>
+      </AppProvider>
+    );
+  }
 
   return (
     <AppProvider i18n={enTranslations}>

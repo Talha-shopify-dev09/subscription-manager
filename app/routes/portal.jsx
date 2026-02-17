@@ -1,5 +1,6 @@
 import { useLoaderData, useActionData, Form } from "react-router";
 import { authenticate } from "../shopify.server";
+import { getBillingInfoWithAdmin, canUseFeature } from "../helpers/billing.server";
 
 // 1. HEADERS: Crucial for rendering within the Shopify Storefront Theme
 export const headers = () => {
@@ -11,7 +12,15 @@ export const headers = () => {
 // 2. LOADER
 export async function loader({ request }) {
   try {
-    const { admin } = await authenticate.public.appProxy(request);
+    const { admin, session } = await authenticate.public.appProxy(request);
+    const billing = await getBillingInfoWithAdmin({ admin, shop: session.shop });
+    if (!canUseFeature(billing, "SUBSCRIPTION")) {
+      return {
+        customer: null,
+        contracts: [],
+        error: "Subscriptions are not available on your current plan.",
+      };
+    }
     const url = new URL(request.url);
     // App Proxy adds this param automatically when a customer is logged in
     const customerId = url.searchParams.get("logged_in_customer_id");
@@ -64,7 +73,11 @@ export async function loader({ request }) {
 // 3. ACTION
 export async function action({ request }) {
   try {
-    const { admin } = await authenticate.public.appProxy(request);
+    const { admin, session } = await authenticate.public.appProxy(request);
+    const billing = await getBillingInfoWithAdmin({ admin, shop: session.shop });
+    if (!canUseFeature(billing, "SUBSCRIPTION")) {
+      return { error: "Subscriptions are not available on your current plan." };
+    }
     const formData = await request.formData();
     const contractId = formData.get("contractId");
 

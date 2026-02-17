@@ -1,8 +1,9 @@
-import { useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher, Link } from "react-router";
 import { authenticate } from "../shopify.server";
+import { getBillingInfo, canUseFeature } from "../helpers/billing.server";
 import {
   AppProvider, Page, Layout, Card, IndexTable, Text, Badge, 
-  Button, EmptyState, Box, Popover, ActionList
+  Button, EmptyState, Box, Popover, ActionList, BlockStack
 } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import { TitleBar } from "@shopify/app-bridge-react";
@@ -55,6 +56,11 @@ const SUBSCRIPTION_DRAFT_COMMIT_MUTATION = `#graphql
 
 // --- LOADER ---
 export async function loader({ request }) {
+  const billing = await getBillingInfo(request);
+  if (!canUseFeature(billing, "SUBSCRIPTION")) {
+    return Response.json({ contracts: [], billing, gated: true });
+  }
+
   const { admin } = await authenticate.admin(request);
   const response = await admin.graphql(
     `#graphql
@@ -75,11 +81,16 @@ export async function loader({ request }) {
   );
 
   const jsonResponse = await response.json();
-  return Response.json({ contracts: jsonResponse.data?.subscriptionContracts?.edges || [] });
+  return Response.json({ contracts: jsonResponse.data?.subscriptionContracts?.edges || [], billing, gated: false });
 }
 
 // --- ACTION ---
 export async function action({ request }) {
+  const billing = await getBillingInfo(request);
+  if (!canUseFeature(billing, "SUBSCRIPTION")) {
+    return new Response("Your plan does not allow Subscriptions.", { status: 403 });
+  }
+
   const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const contractId = formData.get("contractId");
@@ -145,7 +156,7 @@ export async function action({ request }) {
 
 // --- COMPONENT ---
 export default function Contracts() {
-  const { contracts } = useLoaderData();
+  const { contracts, gated } = useLoaderData();
   const fetcher = useFetcher();
 
   const [popoverActive, setPopoverActive] = useState(null); // Stores ID of contract for which popover is active
@@ -216,7 +227,20 @@ export default function Contracts() {
         <Layout>
           <Layout.Section>
             <Card padding="0">
-              {contracts.length === 0 ? (
+              {gated ? (
+                <Box padding="400">
+                  <BlockStack gap="300">
+                    <Text as="h2" variant="headingMd">Subscriptions Locked</Text>
+                    <Text as="p">
+                      Your current plan does not allow Subscriptions. If you are on the Basic plan,
+                      choose Subscriptions in Plan & Billing. For full access, upgrade to Premium.
+                    </Text>
+                    <Link to="/app/plan">
+                      <Button variant="primary">Go to Plan & Billing</Button>
+                    </Link>
+                  </BlockStack>
+                </Box>
+              ) : contracts.length === 0 ? (
                 <EmptyState heading="No contracts found" image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png" />
               ) : (
                 <IndexTable
