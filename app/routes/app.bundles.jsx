@@ -50,7 +50,7 @@ export async function loader({ request }) {
 export async function action({ request }) {
   const billing = await getBillingInfo(request);
   if (!canUseFeature(billing, "BUNDLE")) {
-    return { error: "Your plan does not allow Bundles." };
+    return Response.json({ error: "Your plan does not allow Bundles." }, { status: 403 });
   }
 
   const { admin, session } = await authenticate.admin(request);
@@ -83,7 +83,7 @@ export async function action({ request }) {
         
         await syncMetafields(admin, session.shop);
         
-        return { success: true, deleted: true };
+        return Response.json({ success: true, deleted: true });
     }
 
     // --- UPDATE FLOW ---
@@ -92,7 +92,7 @@ export async function action({ request }) {
         const title = formData.get("title");
         const products = JSON.parse(formData.get("products"));
 
-        if (!bundleId) return { error: "Missing bundle ID" };
+        if (!bundleId) return Response.json({ error: "Missing bundle ID" }, { status: 400 });
 
         let totalOriginal = 0;
         let totalBundle = 0;
@@ -108,7 +108,7 @@ export async function action({ request }) {
         let createdDiscountId = null;
 
         const existingBundle = await db.bundle.findUnique({ where: { id: bundleId } });
-        if (!existingBundle) return { error: "Bundle not found" };
+        if (!existingBundle) return Response.json({ error: "Bundle not found" }, { status: 404 });
 
         if (existingBundle?.discountId) {
             await admin.graphql(
@@ -177,7 +177,7 @@ export async function action({ request }) {
             const responseJson = await response.json();
             const errors = responseJson.data?.discountAutomaticBasicCreate?.userErrors || [];
             if (errors.length > 0) {
-                return { error: `Shopify API Error: ${errors[0].message}` };
+                return Response.json({ error: `Shopify API Error: ${errors[0].message}` }, { status: 400 });
             }
             createdDiscountId = responseJson.data?.discountAutomaticBasicCreate?.automaticDiscountNode?.id;
         }
@@ -193,7 +193,7 @@ export async function action({ request }) {
         });
 
         await syncMetafields(admin, session.shop);
-        return { success: true, updated: true };
+        return Response.json({ success: true, updated: true });
     }
 
     // --- CREATE FLOW ---
@@ -269,7 +269,7 @@ export async function action({ request }) {
             const responseJson = await response.json();
             const errors = responseJson.data?.discountAutomaticBasicCreate?.userErrors || [];
             if (errors.length > 0) {
-                return { error: `Shopify API Error: ${errors[0].message}` };
+                return Response.json({ error: `Shopify API Error: ${errors[0].message}` }, { status: 400 });
             }
             createdDiscountId = responseJson.data?.discountAutomaticBasicCreate?.automaticDiscountNode?.id;
         }
@@ -288,13 +288,13 @@ export async function action({ request }) {
         });
 
         await syncMetafields(admin, session.shop);
-        return { success: true, created: true };
+        return Response.json({ success: true, created: true });
     }
   } catch (error) {
       console.error("SERVER ERROR:", error);
-      return { error: error.message };
+      return Response.json({ error: error.message }, { status: 500 });
   }
-  return null;
+  return Response.json({ success: true });
 }
 
 // Sync Metafields Helper
