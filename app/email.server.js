@@ -3,7 +3,7 @@ import * as SibApiV3Sdk from '@getbrevo/brevo';
 let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 let apiKey = apiInstance.authentications['apiKey'];
 
-export async function sendEmail({ to, from, subject, text, html }) {
+export async function sendEmail({ to, from, subject, text, html, senderName }) {
   // Ensure API Key is set
   if (!process.env.BREVO_API_KEY) {
     console.error('Brevo API Key is not set in environment variables (BREVO_API_KEY). Email will not be sent.');
@@ -17,7 +17,7 @@ export async function sendEmail({ to, from, subject, text, html }) {
   }
 
   const sendSmtpEmail = {
-    sender: { email: from },
+    sender: { email: from, name: senderName || undefined },
     to: [{ email: to }],
     subject: subject,
     textContent: text,

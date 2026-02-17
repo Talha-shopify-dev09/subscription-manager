@@ -11,6 +11,24 @@ async function cleanupShopData(shop) {
   await db.bundleSale.deleteMany({ where: { shop } });
 }
 
+async function getShopName(admin) {
+  if (!admin) return null;
+  try {
+    const response = await admin.graphql(
+      `#graphql
+      query {
+        shop {
+          name
+        }
+      }`
+    );
+    const json = await response.json();
+    return json.data?.shop?.name || null;
+  } catch (error) {
+    return null;
+  }
+}
+
 export const action = async ({ request }) => {
   console.log("Webhook action function hit!"); // Added for debugging
   // 1. Authenticate the webhook request
@@ -21,6 +39,8 @@ export const action = async ({ request }) => {
 
   // Base URL for the customer account portal (dynamically constructed)
   const portalBaseUrl = `https://${shop}/apps/subscription-manager/portal`;
+  const shopName = await getShopName(admin);
+  const senderLabel = shopName ? `${shopName} via Socoba` : `Socoba for ${shop}`;
 
   switch (topic) {
     // --- 2. HANDLE NEW SUBSCRIPTION CONTRACTS ---
@@ -151,17 +171,19 @@ export const action = async ({ request }) => {
         if (customerEmail) {
           if (status.toUpperCase() === 'PAUSED') {
             await sendEmail({
-              to: customerEmail,
-              subject: `[${shop}] Your Subscription Has Been Paused`,
-              text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully paused. You can resume it anytime from your portal.\n\nManage your subscriptions here: ${portalBaseUrl}`,
-              html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully paused. You can resume it anytime from your portal.</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+                to: customerEmail,
+                senderName: senderLabel,
+                subject: `[${shop}] Your Subscription Has Been Paused`,
+                text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully paused. You can resume it anytime from your portal.\n\nManage your subscriptions here: ${portalBaseUrl}`,
+                html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully paused. You can resume it anytime from your portal.</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
             });
           } else if (status.toUpperCase() === 'CANCELLED') {
             await sendEmail({
-              to: customerEmail,
-              subject: `[${shop}] Your Subscription Has Been Cancelled`,
-              text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully cancelled. We're sorry to see you go!\n\nManage your subscriptions here: ${portalBaseUrl}`,
-              html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully cancelled. We're sorry to see you go!</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+                to: customerEmail,
+                senderName: senderLabel,
+                subject: `[${shop}] Your Subscription Has Been Cancelled`,
+                text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully cancelled. We're sorry to see you go!\n\nManage your subscriptions here: ${portalBaseUrl}`,
+                html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully cancelled. We're sorry to see you go!</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
             });
           }
         }
@@ -209,6 +231,7 @@ export const action = async ({ request }) => {
         if (customerEmail) {
             await sendEmail({
                 to: customerEmail,
+                senderName: senderLabel,
                 subject: `[${shop}] Your Subscription Payment Was Successful!`,
                 text: `Hi ${customerFirstName || 'there'},\n\nYour recent subscription payment of ${amount} ${currency} for order ${completedOrder.name} was successful. Thank you for your continued subscription!\n\nYou can manage your subscriptions here: ${portalBaseUrl}`,
                 html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your recent subscription payment of <b>${amount} ${currency}</b> for order ${completedOrder.name} was successful. Thank you for your continued subscription!</p><p>You can manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
@@ -251,6 +274,7 @@ export const action = async ({ request }) => {
         if (customerEmail) {
             await sendEmail({
                 to: customerEmail,
+                senderName: senderLabel,
                 subject: `[${shop}] Important: Your Subscription Payment Failed`,
                 text: `Hi ${customerFirstName || 'there'},\n\nYour recent subscription payment for contract ${subscriptionContractId} failed due to: ${failureReason}. Please update your payment method to avoid interruption of service.\n\nYou can update your payment method here: ${portalBaseUrl}`,
                 html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your recent subscription payment for contract <b>${subscriptionContractId}</b> failed due to: <b>${failureReason}</b>. Please update your payment method to avoid interruption of service.</p><p>You can update your payment method here: <a href="${portalBaseUrl}">Update Payment Method</a></p>`
