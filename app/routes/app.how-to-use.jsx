@@ -47,7 +47,10 @@ export default function HowToUse() {
 
                 <Text as="h2" variant="headingMd">Add Widgets to Your Storefront</Text>
                 <BlockStack gap="200">
-                  <Text as="p">1. In Shopify Admin, go to <strong>Online Store -> Themes -> Customize</strong>.</Text>
+                  <Text as="p">
+                    1. In Shopify Admin, go to <strong>Online Store</strong> {"->"}{" "}
+                    <strong>Themes</strong> {"->"} <strong>Customize</strong>.
+                  </Text>
                   <Text as="p">2. Choose the page/template where you want the widget.</Text>
                   <Text as="p">3. Click <strong>Add block</strong> and select <strong>Socoba Bundle Block</strong>.</Text>
                   <Text as="p">4. Paste the <strong>Bundle Short ID</strong> and save.</Text>

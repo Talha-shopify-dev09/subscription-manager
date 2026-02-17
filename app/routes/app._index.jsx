@@ -323,7 +323,10 @@ export default function Index() {
                       Use the Theme Editor to add the Socoba widget blocks to your storefront:
                     </Text>
                     <BlockStack gap="100">
-                      <Text as="p">1. In Shopify Admin, go to <strong>Online Store -> Themes -> Customize</strong>.</Text>
+                      <Text as="p">
+                        1. In Shopify Admin, go to <strong>Online Store</strong> {"->"}{" "}
+                        <strong>Themes</strong> {"->"} <strong>Customize</strong>.
+                      </Text>
                       <Text as="p">2. Select the page/template where you want to show the widget.</Text>
                       <Text as="p">3. Click <strong>Add block</strong> and choose <strong>Socoba Bundle Block</strong>.</Text>
                       <Text as="p">4. Enter the <strong>Bundle Short ID</strong> from your bundle list.</Text>

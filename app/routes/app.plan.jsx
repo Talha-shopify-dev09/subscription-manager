@@ -13,12 +13,12 @@ import {
 import enTranslations from "@shopify/polaris/locales/en.json";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { getBillingInfo, PLAN_BASIC, PLAN_PREMIUM } from "../helpers/billing.server";
+import { getBillingInfo } from "../helpers/billing.server";
 
 export async function loader({ request }) {
   await authenticate.admin(request);
   const billing = await getBillingInfo(request);
-  return Response.json({ billing });
+  return Response.json({ billing, planBasic: "Basic", planPremium: "Premium" });
 }
 
 export async function action({ request }) {
@@ -40,10 +40,10 @@ export async function action({ request }) {
 }
 
 export default function PlanAndBilling() {
-  const { billing } = useLoaderData();
+  const { billing, planBasic, planPremium } = useLoaderData();
   const fetcher = useFetcher();
-  const isBasic = billing.activePlanName === PLAN_BASIC;
-  const isPremium = billing.activePlanName === PLAN_PREMIUM;
+  const isBasic = billing.activePlanName === planBasic;
+  const isPremium = billing.activePlanName === planPremium;
 
   return (
     <AppProvider i18n={enTranslations}>
