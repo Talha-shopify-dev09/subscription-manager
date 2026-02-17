@@ -18,9 +18,10 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>A short heading about [your app]</h1>
+        <h1 className={styles.heading}>Socoba Bundles and Subscriptions</h1>
         <p className={styles.text}>
-          A tagline about [your app] that describes your value proposition.
+          Create subscription plans, manage contracts, and sell fixed bundles with
+          automatic discounts.
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">
@@ -36,16 +37,16 @@ export default function App() {
         )}
         <ul className={styles.list}>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Subscriptions</strong>. Create selling plans for products or
+            collections with flexible intervals and discounts.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Customer management</strong>. Pause or cancel contracts and
+            monitor subscription performance.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Bundles</strong>. Build fixed bundles and publish storefront
+            widgets powered by app metafields.
           </li>
         </ul>
       </div>

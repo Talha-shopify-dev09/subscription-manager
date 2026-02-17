@@ -17,6 +17,7 @@ export default reactExtension('admin.order-details.block.render', () => <App />)
 
 function App() {
   const api = useApi();
+  const { i18n } = api;
 
   const data = api['data'];
   const query = api['query'];

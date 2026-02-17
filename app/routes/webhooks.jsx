@@ -2,6 +2,15 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { sendEmail } from "../email.server"; // Import the email sending utility
 
+async function cleanupShopData(shop) {
+  await db.session.deleteMany({ where: { shop } });
+  await db.subscription.deleteMany({ where: { shop } });
+  await db.bundle.deleteMany({ where: { shop } });
+  await db.contract.deleteMany({ where: { shop } });
+  await db.transaction.deleteMany({ where: { shop } });
+  await db.bundleSale.deleteMany({ where: { shop } });
+}
+
 export const action = async ({ request }) => {
   console.log("Webhook action function hit!"); // Added for debugging
   // 1. Authenticate the webhook request
@@ -303,16 +312,65 @@ export const action = async ({ request }) => {
       break;
     }
 
+    // --- 6. GDPR / COMPLIANCE WEBHOOKS ---
+    case "CUSTOMERS_DATA_REQUEST": {
+      console.log(`GDPR data request received for shop: ${shop}`);
+      break;
+    }
+
+    case "CUSTOMERS_REDACT": {
+      try {
+        const customerId = payload?.customer?.id;
+        const customerGid = customerId ? `gid://shopify/Customer/${customerId}` : null;
+        const customerEmail = payload?.customer?.email || null;
+
+        if (customerGid) {
+          const contracts = await db.contract.findMany({
+            where: { customerId: customerGid, shop },
+            select: { id: true },
+          });
+          const contractIds = contracts.map((c) => c.id);
+          if (contractIds.length > 0) {
+            await db.transaction.deleteMany({ where: { contractId: { in: contractIds }, shop } });
+            await db.contract.deleteMany({ where: { id: { in: contractIds }, shop } });
+          }
+          await db.bundleSale.deleteMany({ where: { customerId: String(customerId), shop } });
+        }
+
+        if (customerEmail) {
+          const emailContracts = await db.contract.findMany({
+            where: { customerEmail, shop },
+            select: { id: true },
+          });
+          const emailContractIds = emailContracts.map((c) => c.id);
+          if (emailContractIds.length > 0) {
+            await db.transaction.deleteMany({ where: { contractId: { in: emailContractIds }, shop } });
+            await db.contract.deleteMany({ where: { id: { in: emailContractIds }, shop } });
+          }
+        }
+
+        console.log(`GDPR customer redact completed for shop: ${shop}`);
+      } catch (error) {
+        console.error("GDPR customer redact failed:", error);
+      }
+      break;
+    }
+
+    case "SHOP_REDACT": {
+      try {
+        await cleanupShopData(shop);
+        console.log(`GDPR shop redact completed for shop: ${shop}`);
+      } catch (error) {
+        console.error("GDPR shop redact failed:", error);
+      }
+      break;
+    }
+
     // --- 6. APP UNINSTALL CLEANUP ---
     case "APP_UNINSTALLED": {
       if (session) {
         // Clean up all shop data to comply with Shopify requirements
-        await db.session.deleteMany({ where: { shop } });
-        await db.subscription.deleteMany({ where: { shop } });
-        await db.bundle.deleteMany({ where: { shop } });
-        await db.contract.deleteMany({ where: { shop } });
-        await db.transaction.deleteMany({ where: { shop } }); // Clean up transactions
-        await db.bundleSale.deleteMany({ where: { shop } }); // Clean up bundle sales
+        await cleanupShopData(shop);
         console.log(`🗑️ Cleaned up data for uninstalled shop: ${shop}`);
       }
       break;

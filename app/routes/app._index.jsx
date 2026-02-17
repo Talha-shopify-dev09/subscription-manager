@@ -224,7 +224,7 @@ export default function Index() {
               <InlineGrid columns={2} gap="400">
                 <Card>
                   <BlockStack gap="200">
-                    <Text as="h2" variant="headingMd">📦 Subscription Manager</Text>
+                    <Text as="h2" variant="headingMd">Subscription Manager</Text>
                     <Text as="p">
                       Manage recurring plans and discounts. Set pricing for multiple cycles.
                     </Text>
@@ -236,7 +236,7 @@ export default function Index() {
 
                 <Card>
                   <BlockStack gap="200">
-                    <Text as="h2" variant="headingMd">👥 Customer Contracts</Text>
+                    <Text as="h2" variant="headingMd">Customer Contracts</Text>
                     <Text as="p">
                       Directly manage subscriber agreements, pause billing, or cancel contracts.
                     </Text>
@@ -279,7 +279,7 @@ export default function Index() {
                       Use the Theme Editor to add the Socoba widget blocks to your storefront:
                     </Text>
                     <BlockStack gap="100">
-                      <Text as="p">1. In Shopify Admin, go to <strong>Online Store → Themes → Customize</strong>.</Text>
+                      <Text as="p">1. In Shopify Admin, go to <strong>Online Store -> Themes -> Customize</strong>.</Text>
                       <Text as="p">2. Select the page/template where you want to show the widget.</Text>
                       <Text as="p">3. Click <strong>Add block</strong> and choose <strong>Socoba Bundle Block</strong>.</Text>
                       <Text as="p">4. Enter the <strong>Bundle Short ID</strong> from your bundle list.</Text>
@@ -307,7 +307,7 @@ export default function Index() {
             <Layout.Section>
               <Card>
                 <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">🎁 Fixed Bundles</Text>
+                  <Text as="h2" variant="headingMd">Fixed Bundles</Text>
                   <Text as="p">
                     Create product bundles to sell together as a single unit with a discount.
                   </Text>
@@ -348,3 +348,4 @@ export default function Index() {
     </AppProvider>
   );
 }
+
