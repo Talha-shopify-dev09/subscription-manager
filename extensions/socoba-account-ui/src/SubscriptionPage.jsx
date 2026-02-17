@@ -165,7 +165,7 @@ function SubscriptionPage() {
       }
 
       toast.show(i18n.translate(`${actionType.toLowerCase()}_success`));
-      fetchSubscriptions(); // Re-fetch to update UI after successful action
+      await fetchSubscriptions(); // Re-fetch to update UI after successful action
     } catch (error) {
       toast.show(i18n.translate('action_error'));
     } finally {
