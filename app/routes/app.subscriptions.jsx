@@ -17,7 +17,7 @@ import db from "../db.server";
 export async function loader({ request }) {
   const billing = await getBillingInfo(request);
   if (!canUseFeature(billing, "SUBSCRIPTION")) {
-    return Response.json({ gated: true, billing, subscriptions: [], products: [], collections: [] });
+    return Response.json({ gated: true, billing, subscriptions: [], products: [] });
   }
 
   const { admin, session } = await authenticate.admin(request);
@@ -26,7 +26,6 @@ export async function loader({ request }) {
     `#graphql
       query {
         products(first: 50) { edges { node { id title priceRangeV2 { minVariantPrice { amount } } } } }
-        collections(first: 50) { edges { node { id title } } }
       }
     `
   );
@@ -37,16 +36,12 @@ export async function loader({ request }) {
     id: e.node.id, title: e.node.title, price: e.node.priceRangeV2.minVariantPrice.amount
   }));
   
-  const collections = responseJson.data.collections.edges.map(e => ({
-    id: e.node.id, title: e.node.title
-  }));
-  
   const subscriptions = await db.subscription.findMany({
     where: { shop: session.shop },
     orderBy: { createdAt: 'desc' }
   });
   
-  return Response.json({ subscriptions, products, collections, billing, gated: false });
+  return Response.json({ subscriptions, products, billing, gated: false });
 }
 
 // --- ACTION ---
@@ -59,52 +54,6 @@ export async function action({ request }) {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const actionType = formData.get("action");
-  
-  if (actionType === "fetchCollectionProducts") {
-    const collectionId = formData.get("collectionId");
-    try {
-      let allProducts = [];
-      let hasNextPage = true;
-      let cursor = null;
-      
-      while (hasNextPage) {
-        const response = await admin.graphql(
-          `#graphql
-          query getCollectionProducts($id: ID!, $cursor: String) {
-            collection(id: $id) {
-              products(first: 250, after: $cursor) {
-                pageInfo { hasNextPage endCursor }
-                edges { 
-                  node { 
-                    id title 
-                    media(first: 1) { 
-                      nodes { ... on MediaImage { image { url } } } 
-                    } 
-                  } 
-                }
-              }
-            }
-          }`,
-          { variables: { id: collectionId, cursor } }
-        );
-        
-        const json = await response.json();
-        const productsData = json.data?.collection?.products;
-        
-        if (productsData) {
-          const products = productsData.edges.map(e => ({
-            id: e.node.id, title: e.node.title, image: e.node.media.nodes[0]?.image?.url
-          }));
-          allProducts = [...allProducts, ...products];
-          hasNextPage = productsData.pageInfo.hasNextPage;
-          cursor = productsData.pageInfo.endCursor;
-        } else { hasNextPage = false; }
-      }
-      return Response.json({ collectionProducts: allProducts, totalCount: allProducts.length });
-    } catch (error) {
-      return Response.json({ error: "Failed to fetch collection" }, { status: 500 });
-    }
-  }
   
   if (actionType === "delete") {
     const id = formData.get("id");
@@ -125,7 +74,6 @@ export async function action({ request }) {
   }
 
   if (actionType === "create") {
-    const type = formData.get("type").toUpperCase(); 
     const targetTitle = formData.get("targetTitle");
     const originalPrice = formData.get("originalPrice");
     const plans = JSON.parse(formData.get("plans") || "[]");
@@ -206,8 +154,8 @@ export async function action({ request }) {
       await db.subscription.create({
         data: {
           shop: session.shop,
-          type: type === 'COLLECTION' ? 'COLLECTION' : 'PRODUCT', 
-          targetId: formData.get("collectionId") || targetIds[0],
+          type: 'PRODUCT',
+          targetId: targetIds[0],
           targetTitle, 
           originalPrice: originalPrice || "0",
           plansData: plans,
@@ -255,9 +203,8 @@ export function ErrorBoundary() {
 import { useNavigation } from "react-router";
 
 export default function Subscriptions() {
-  const { subscriptions, products, collections, billing, gated } = useLoaderData();
+  const { subscriptions, products, billing, gated } = useLoaderData();
   const fetcher = useFetcher();
-  const collectionFetcher = useFetcher();
   const shopify = useAppBridge();
   const revalidator = useRevalidator();
 
@@ -266,24 +213,21 @@ export default function Subscriptions() {
   );
   
   const [showModal, setShowModal] = useState(false);
-  const [subscriptionType, setSubscriptionType] = useState("product");
   const [plans, setPlans] = useState([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
   
-  const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [selectedTitle, setSelectedTitle] = useState("");
   const [selectedPrice, setSelectedPrice] = useState("");
   const [targetIds, setTargetIds] = useState([]);
   const [previewProducts, setPreviewProducts] = useState([]);
 
   const isLoading = ["loading", "submitting"].includes(fetcher.state);
-  const isLoadingCollection = ["loading", "submitting"].includes(collectionFetcher.state);
 
   const addPlan = () => setPlans([...plans, { interval: "MONTH", intervalCount: 1, discount: 0, maxCycles: "" }]);
   const removePlan = (index) => { const n = [...plans]; n.splice(index, 1); setPlans(n); };
   const updatePlan = (index, field, value) => { const n = [...plans]; n[index][field] = value; setPlans(n); };
 
   const handleCancel = useCallback(() => {
-    setShowModal(false); setSubscriptionType("product");
+    setShowModal(false);
     setPlans([{ interval: "MONTH", intervalCount: 1, discount: 10, maxCycles: "" }]);
     setTargetIds([]); setPreviewProducts([]); setSelectedTitle(""); setSelectedPrice("");
   }, []);
@@ -298,39 +242,16 @@ export default function Subscriptions() {
     }
   }, [products]);
 
-  const handleCollectionSelect = useCallback((value) => {
-    const collection = collections.find(c => c.id === value);
-    if (collection) {
-        setSelectedTitle(collection.title);
-        setSelectedPrice("N/A");
-        setSelectedCollectionId(collection.id);
-        const formData = new FormData();
-        formData.append("action", "fetchCollectionProducts");
-        formData.append("collectionId", collection.id);
-        collectionFetcher.submit(formData, { method: "post" });
-    }
-  }, [collections, collectionFetcher]);
-
-  useEffect(() => {
-      if (collectionFetcher.data?.collectionProducts) {
-          const prods = collectionFetcher.data.collectionProducts;
-          setPreviewProducts(prods);
-          setTargetIds(prods.map(p => p.id));
-      }
-  }, [collectionFetcher.data]);
-
   const handleSave = useCallback(() => {
     if (targetIds.length === 0) return shopify.toast.show("No products selected", { isError: true });
     const data = new FormData();
     data.append("action", "create");
-    data.append("type", subscriptionType);
     data.append("targetTitle", selectedTitle);
     data.append("originalPrice", selectedPrice);
     data.append("targetIds", JSON.stringify(targetIds)); 
     data.append("plans", JSON.stringify(plans));
-    if (subscriptionType === 'collection') data.append("collectionId", selectedCollectionId);
     fetcher.submit(data, { method: "post" });
-  }, [targetIds, subscriptionType, selectedTitle, selectedPrice, plans, fetcher, shopify, selectedCollectionId]);
+  }, [targetIds, selectedTitle, selectedPrice, plans, fetcher, shopify]);
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success) {
@@ -425,10 +346,8 @@ export default function Subscriptions() {
         <Modal open={showModal} onClose={handleCancel} title="Create Subscription Plan" primaryAction={{ content: 'Save', onAction: handleSave, loading: isLoading }}>
           <Modal.Section>
             <FormLayout>
-              <Select label="Type" options={[{ label: 'Product', value: 'product' }, { label: 'Collection', value: 'collection' }]} value={subscriptionType} onChange={(v) => { setSubscriptionType(v); setTargetIds([]); setPreviewProducts([]); }} />
-              {subscriptionType === 'product' ? <Select label="Select Product" options={[{ label: 'Select product', value: '' }, ...products.map(p => ({ label: p.title, value: p.id }))]} onChange={handleProductSelect} /> : <Select label="Select Collection" options={[{ label: 'Select collection', value: '' }, ...collections.map(c => ({ label: c.title, value: c.id }))]} onChange={handleCollectionSelect} />}
-              {isLoadingCollection && <Box padding="400"><InlineStack align="center" gap="200"><Spinner size="small" /><Text>Loading products...</Text></InlineStack></Box>}
-              {previewProducts.length > 0 && !isLoadingCollection && (
+              <Select label="Select Product" options={[{ label: 'Select product', value: '' }, ...products.map(p => ({ label: p.title, value: p.id }))]} onChange={handleProductSelect} />
+              {previewProducts.length > 0 && (
                 <Box background="bg-surface-secondary" padding="300" borderRadius="200">
                   <Text variant="bodyMd" fontWeight="bold">Applying to {previewProducts.length} products:</Text>
                   <div style={{maxHeight: '150px', overflowY: 'auto', marginTop: '10px'}}>

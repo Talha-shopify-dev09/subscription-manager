@@ -4,125 +4,416 @@
   "target": "section",
   "settings": [
     { "type": "text", "id": "heading", "label": "Heading", "default": "Purchase Options" },
-    { "type": "color", "id": "accent_color", "label": "Button Color", "default": "#000000" }
+
+    { "type": "color", "id": "button_bg_color", "label": "Button background color", "default": "#000000" },
+    { "type": "color", "id": "button_text_color", "label": "Button text color", "default": "#ffffff" },
+
+    { "type": "color", "id": "border_color", "label": "Border Color", "default": "#e5e7eb" },
+    { "type": "color", "id": "border_hover_color", "label": "Border Hover Color", "default": "#9ca3af" },
+    { "type": "color", "id": "border_selected_color", "label": "Selected Border Color", "default": "#111111" },
+
+    { "type": "color", "id": "radio_color", "label": "Radio circle color", "default": "#111111" },
+
+    {
+      "type": "select",
+      "id": "cart_action",
+      "label": "Cart action after add",
+      "default": "redirect",
+      "options": [
+        { "value": "redirect", "label": "Redirect to cart page" },
+        { "value": "drawer", "label": "Open Cart Drawer" }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "cart_toggle_selector",
+      "label": "Optional, Cart icon selector override",
+    }
   ]
 }
 {% endschema %}
 
-<div id="subscription-widget-{{ product.id }}" class="sw-wrapper" data-product-id="{{ product.id }}">
+{% assign widget_id = 'subscription-widget-' | append: product.id | append: '-' | append: block.id %}
+
+<div
+  id="{{ widget_id }}"
+  class="sw-wrapper"
+  data-product-id="{{ product.id }}"
+  data-default-variant-id="{{ product.selected_or_first_available_variant.id }}"
+  data-cart-action="{{ block.settings.cart_action }}"
+  data-cart-toggle-selector="{{ block.settings.cart_toggle_selector | escape }}"
+>
   <div style="padding: 15px; text-align: center; color: #6b7280; font-size: 0.9em;">Loading options...</div>
 </div>
 
 <style>
-  .sw-wrapper { border: none; max-width: 100%; background: transparent; margin: 24px 0; font-family: inherit; }
-  .sw-header { padding-bottom: 12px; font-size: 16px; font-weight: 600; color: #111; }
-  
-  .sw-option-row { 
-    display: flex; align-items: flex-start; gap: 12px; padding: 16px; 
-    border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; 
-    background: #fff; cursor: pointer; transition: all 0.2s ease; 
+  #{{ widget_id }}{
+    --sw-btn-bg: {{ block.settings.button_bg_color }};
+    --sw-btn-text: {{ block.settings.button_text_color }};
+    --sw-border: {{ block.settings.border_color }};
+    --sw-border-hover: {{ block.settings.border_hover_color }};
+    --sw-border-selected: {{ block.settings.border_selected_color }};
+    --sw-radio: {{ block.settings.radio_color }};
   }
-  .sw-option-row:hover { border-color: #9ca3af; }
-  .sw-option-row.selected { border-color: #111; border-width: 2px; background: #fafafa; }
-  
-  .sw-radio-container { padding-top: 2px; }
-  .sw-radio-container input[type="radio"] { width: 18px; height: 18px; accent-color: #111; cursor: pointer; }
-  
-  .sw-info { flex: 1; display: flex; flex-direction: column; }
-  .sw-top-line { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-  .sw-label-text { font-size: 15px; font-weight: 500; color: #111; }
-  .sw-price-text { font-size: 15px; font-weight: 600; color: #111; }
-  
-  .sw-badge { 
-    background: #111; color: #fff; font-size: 10px; font-weight: 700; 
-    padding: 2px 8px; border-radius: 12px; margin-left: 8px; text-transform: uppercase;
+
+  #{{ widget_id }}.sw-wrapper { border: none; max-width: 100%; background: transparent; margin: 24px 0; font-family: inherit; }
+  #{{ widget_id }} .sw-header { padding-bottom: 12px; font-size: 16px; font-weight: 600; color: #111; }
+
+  #{{ widget_id }} .sw-option-row{
+    display:flex; align-items:flex-start; gap:12px; padding:16px;
+    border:1px solid var(--sw-border); border-radius:8px; margin-bottom:12px;
+    background:#fff; cursor:pointer; transition:all .2s ease;
   }
-  
-  .sw-plan-selector { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e5e5; display: none; }
-  .sw-select { 
-    width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; 
-    font-size: 14px; background: #fff; color: #333; cursor: pointer;
+  #{{ widget_id }} .sw-option-row:hover{ border-color: var(--sw-border-hover); }
+  #{{ widget_id }} .sw-option-row.selected{ border-color: var(--sw-border-selected); border-width:2px; background:#fafafa; }
+
+  #{{ widget_id }} .sw-radio-container{ padding-top:2px; }
+  #{{ widget_id }} .sw-radio-container input[type="radio"]{ width:18px; height:18px; accent-color: var(--sw-radio); cursor:pointer; }
+
+  #{{ widget_id }} .sw-info{ flex:1; display:flex; flex-direction:column; }
+  #{{ widget_id }} .sw-top-line{ display:flex; align-items:center; justify-content:space-between; width:100%; }
+  #{{ widget_id }} .sw-label-text{ font-size:15px; font-weight:500; color:#111; }
+  #{{ widget_id }} .sw-price-text{ font-size:15px; font-weight:600; color:#111; }
+
+  #{{ widget_id }} .sw-badge{
+    background:#111; color:#fff; font-size:10px; font-weight:700;
+    padding:2px 8px; border-radius:12px; margin-left:8px; text-transform:uppercase;
   }
-  
-  .sw-btn { 
-    width: 100%; background-color: {{ section.settings.accent_color }}; color: #fff; 
-    padding: 12px; border: none; border-radius: 8px; cursor: pointer; 
-    font-weight: 600; font-size: 16px; margin-top: 12px; transition: opacity 0.2s;
+
+  #{{ widget_id }} .sw-plan-selector{ margin-top:12px; padding-top:12px; border-top:1px solid #e5e5e5; display:none; }
+  #{{ widget_id }} .sw-select{
+    width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:6px;
+    font-size:14px; background:#fff; color:#333; cursor:pointer;
   }
-  .sw-btn:hover { opacity: 0.9; }
-  .sw-error { color: #dc2626; font-size: 13px; margin-top: 8px; text-align: center; display: none; }
+
+  #{{ widget_id }} .sw-btn{
+    width:100%;
+    background-color: var(--sw-btn-bg);
+    color: var(--sw-btn-text);
+    padding:12px;
+    border:none; border-radius:8px;
+    cursor:pointer;
+    font-weight:600; font-size:16px;
+    margin-top:12px;
+    transition:opacity .2s;
+  }
+  #{{ widget_id }} .sw-btn:hover{ opacity:.9; }
+  #{{ widget_id }} .sw-error{ color:#dc2626; font-size:13px; margin-top:8px; text-align:center; display:none; }
 </style>
 
 <script>
-(async function() {
-  const container = document.getElementById('subscription-widget-{{ product.id }}');
-  const productId = '{{ product.id }}';
-  // Note: We use the initial price as a base, but dynamic variant pricing usually requires listening to theme events.
-  // For simplicity, we calculate based on the current product price liquid output.
-  const productPriceCents = {{ product.price }}; 
+(function() {
+  const container = document.getElementById('{{ widget_id }}');
+  if (!container) return;
+
+  const productId = String(container.dataset.productId || '{{ product.id }}');
+  const defaultVariantId = parseInt(container.dataset.defaultVariantId || '{{ product.selected_or_first_available_variant.id }}', 10);
+
+  const cartAction = container.dataset.cartAction || 'redirect';
+  const cartToggleSelectorOverride = (container.dataset.cartToggleSelector || '').trim();
+
   const currencySymbol = '{{ cart.currency.symbol }}';
+  const fallbackPriceCents = {{ product.price }};
 
-  function formatMoney(cents) { 
-    return currencySymbol + (cents / 100).toFixed(2); 
+  function rootPath() {
+    return (window.Shopify && Shopify.routes && Shopify.routes.root) ? Shopify.routes.root : '/';
   }
 
-  // --- HELPER: Get Current Variant ID ---
-  // This is the FIX for the static variant issue.
-  function getCurrentVariantId() {
+  function formatMoney(cents) {
+    const n = Number(cents);
+    if (!Number.isFinite(n)) return currencySymbol + '0.00';
+    return currencySymbol + (n / 100).toFixed(2);
+  }
+
+  function getProductForm() {
+    const byBlock = container.closest('section, .shopify-section') || document;
+    return byBlock.querySelector('form[action*="/cart/add"]') || document.querySelector('form[action*="/cart/add"]');
+  }
+
+  function getVariantIdFromForm() {
+    const form = getProductForm();
+    if (!form) return null;
+    const idInput = form.querySelector('input[name="id"]') || form.querySelector('[name="id"]');
+    if (!idInput) return null;
+    const val = parseInt(idInput.value, 10);
+    return Number.isFinite(val) ? val : null;
+  }
+
+  function getVariantIdFromUrl() {
     const urlParams = new URLSearchParams(window.location.search);
-    const variantFromUrl = urlParams.get('variant');
-    if (variantFromUrl) return parseInt(variantFromUrl);
-    
-    // Fallback to the first available variant if URL param is missing
-    return {{ product.selected_or_first_available_variant.id }};
+    const v = urlParams.get('variant');
+    if (!v) return null;
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : null;
   }
 
-  try {
-    // 1. Fetch Plan Data from your secure App Proxy
-    const response = await fetch(`/apps/subscription-manager/api/subscription/${productId}`);
-    
-    if (!response.ok) { 
-      console.warn("Subscription API unreachable"); 
-      container.style.display = 'none'; 
-      return; 
-    }
-    
-    const data = await response.json();
-    if (!data.subscription || !data.subscription.enabled) { 
-      container.style.display = 'none'; 
-      return; 
+  function getCurrentVariantId() {
+    return getVariantIdFromForm() || getVariantIdFromUrl() || defaultVariantId;
+  }
+
+  function readVariantPriceCentsIfPossible() {
+    const form = getProductForm();
+    const scope = form || document;
+
+    const candidates = [
+      '[data-variant-price]',
+      '[data-product-price]',
+      '[data-current-price]',
+      '[data-price]'
+    ];
+
+    for (const sel of candidates) {
+      const el = scope.querySelector(sel);
+      if (!el) continue;
+
+      const centsAttr =
+        el.getAttribute('data-variant-price') ||
+        el.getAttribute('data-product-price') ||
+        el.getAttribute('data-current-price');
+
+      if (centsAttr && /^\d+$/.test(String(centsAttr))) {
+        const n = parseInt(centsAttr, 10);
+        if (Number.isFinite(n)) return n;
+      }
     }
 
-    const sub = data.subscription;
-    const plans = sub.plansData;
-    const shopifyIds = sub.shopifyPlanIds || {};
+    return fallbackPriceCents;
+  }
 
-    if (!plans || plans.length === 0) { 
-      container.style.display = 'none'; 
-      return; 
+  async function getCartJson() {
+    try {
+      const r = await fetch(rootPath() + 'cart.js', { credentials: 'same-origin' });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function updateCartCountUI(cart) {
+    if (!cart || typeof cart.item_count !== 'number') return;
+    const count = cart.item_count;
+
+    const selectors = [
+      '[data-cart-count]',
+      '[data-header-cart-count]',
+      '.cart-count',
+      '.header__cart-count',
+      '.cart-count-bubble span',
+      '.cart-count-bubble',
+      '[class*="cart-count"]',
+      '[id*="cart-icon-bubble"] span',
+      '[id*="cart-icon-bubble"]'
+    ];
+
+    const nodes = new Set();
+    selectors.forEach(sel => document.querySelectorAll(sel).forEach(n => nodes.add(n)));
+
+    nodes.forEach(node => {
+      const tag = (node.tagName || '').toLowerCase();
+      if (tag === 'input') node.value = String(count);
+      else node.textContent = String(count);
+
+      if (node.classList) {
+        node.classList.toggle('hidden', count === 0);
+        node.classList.toggle('is-empty', count === 0);
+      }
+    });
+  }
+
+  function dispatchCartEvents(cart, sectionsPayload) {
+    const events = [
+      'cart:updated',
+      'cart:refresh',
+      'cart:change',
+      'cart:added',
+      'theme:cart:updated',
+      'ajaxCart:afterAdd',
+      'cart:build',
+      'cart:open'
+    ];
+
+    events.forEach(name => {
+      try {
+        window.dispatchEvent(new CustomEvent(name, { detail: { cart, sections: sectionsPayload || null } }));
+        document.dispatchEvent(new CustomEvent(name, { detail: { cart, sections: sectionsPayload || null } }));
+      } catch (e) {}
+    });
+
+    // Horizon style update
+    try {
+      document.dispatchEvent(new CustomEvent('cart:update', {
+        bubbles: true,
+        detail: {
+          sourceId: 'subscription-widget-{{ widget_id }}',
+          data: {
+            source: 'subscription-widget',
+            itemCount: cart && typeof cart.item_count === 'number' ? cart.item_count : null,
+            sections: sectionsPayload || null
+          }
+        }
+      }));
+    } catch (e) {}
+  }
+
+  function openDrawerByCommonApis() {
+    const drawer =
+      document.querySelector('cart-drawer-component') ||
+      document.querySelector('cart-drawer') ||
+      document.querySelector('#CartDrawer') ||
+      document.querySelector('[data-cart-drawer]') ||
+      document.querySelector('.cart-drawer');
+
+    if (!drawer) return false;
+
+    try {
+      if (typeof drawer.open === 'function') { drawer.open(); return true; }
+      if (typeof drawer.show === 'function') { drawer.show(); return true; }
+      if (typeof drawer.renderContents === 'function') { drawer.renderContents(); return true; }
+
+      drawer.classList.add('is-open', 'open', 'active');
+      drawer.setAttribute('open', 'true');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function clickCartIconToOpenDrawer() {
+    const selectors = [];
+
+    if (cartToggleSelectorOverride.length) selectors.push(cartToggleSelectorOverride);
+
+    selectors.push(
+      '[data-testid="cart-drawer-trigger"]',
+      '[data-cart-toggle]',
+      '[data-cart-drawer-trigger]',
+      '[aria-controls="CartDrawer"]',
+      '[aria-controls="cart-drawer"]',
+      'button[name="cart"]',
+      '.header__icon--cart',
+      '.header__icon-cart',
+      '.site-header__cart',
+      '.header-cart',
+      '.cart-link',
+      '.js-drawer-open-cart',
+      '[data-drawer-trigger="cart"]',
+      'a[href="/cart"]',
+      'a[href="/cart/"]'
+    );
+
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      try { el.click(); return true; } catch (e) {}
+    }
+    return false;
+  }
+
+  function discoverSectionIdsForRefresh() {
+    const ids = new Set();
+
+    document.querySelectorAll('[data-section-id]').forEach(el => {
+      const id = el.getAttribute('data-section-id');
+      if (id) ids.add(id);
+    });
+
+    // Common handles
+    ids.add('cart-icon-bubble');
+    ids.add('cart-drawer');
+    ids.add('cart-notification');
+
+    // If wrappers exist, keep those handles
+    ['cart-icon-bubble','cart-drawer','cart-notification'].forEach(handle => {
+      if (document.getElementById('shopify-section-' + handle)) ids.add(handle);
+    });
+
+    return Array.from(ids).filter(Boolean);
+  }
+
+  async function fetchSectionsSmart() {
+    const sectionIds = discoverSectionIdsForRefresh();
+    if (!sectionIds.length) return null;
+
+    const url = rootPath() + '?sections=' + encodeURIComponent(sectionIds.join(','));
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function applySectionsToDom(sections) {
+    if (!sections || typeof sections !== 'object') return false;
+
+    let applied = false;
+
+    Object.keys(sections).forEach((key) => {
+      const html = sections[key];
+      if (!html) return;
+
+      const wrapper = document.getElementById('shopify-section-' + key);
+      if (wrapper) {
+        wrapper.innerHTML = html;
+        applied = true;
+        return;
+      }
+
+      const byData = document.querySelector('[data-section-id="' + key + '"]');
+      if (byData && byData.closest('.shopify-section')) {
+        byData.closest('.shopify-section').innerHTML = html;
+        applied = true;
+        return;
+      }
+    });
+
+    return applied;
+  }
+
+  async function refreshThemeCartUi(cart) {
+    const sections = await fetchSectionsSmart();
+
+    if (sections) {
+      applySectionsToDom(sections);
+      dispatchCartEvents(cart, sections);
+      return sections;
     }
 
-    // 2. Build the UI
+    dispatchCartEvents(cart, null);
+    return null;
+  }
+
+  async function fetchSubscriptionConfig() {
+    const res = await fetch('/apps/subscription-manager/api/subscription/' + encodeURIComponent(productId));
+    if (!res.ok) return null;
+    return await res.json();
+  }
+
+  function buildWidget(plans, shopifyIds) {
+    const productPriceCents = readVariantPriceCentsIfPossible();
+
     const firstPlan = plans[0];
     const firstDiscount = parseFloat(firstPlan.discount || 0);
     const discountedPriceCents = productPriceCents * (1 - firstDiscount / 100);
 
     let html = `
-      <div class="sw-header">{{ section.settings.heading }}</div>
-      
-      <div class="sw-option-row selected" id="opt-row-onetime" onclick="selectOption('onetime')">
+      <div class="sw-header">{{ block.settings.heading }}</div>
+
+      <div class="sw-option-row selected" id="opt-row-onetime" role="button" tabindex="0">
         <div class="sw-radio-container">
           <input type="radio" name="purchase_option" value="onetime" checked>
         </div>
         <div class="sw-info">
           <div class="sw-top-line">
             <span class="sw-label-text">One-time purchase</span>
-            <span class="sw-price-text">${formatMoney(productPriceCents)}</span>
+            <span class="sw-price-text" id="one-time-price">${formatMoney(productPriceCents)}</span>
           </div>
         </div>
       </div>
 
-      <div class="sw-option-row" id="opt-row-sub" onclick="selectOption('subscription')">
+      <div class="sw-option-row" id="opt-row-sub" role="button" tabindex="0">
         <div class="sw-radio-container">
           <input type="radio" name="purchase_option" value="subscription">
         </div>
@@ -134,25 +425,22 @@
             </span>
             <span class="sw-price-text" id="sub-price-display">${formatMoney(discountedPriceCents)}</span>
           </div>
-          
-          <div class="sw-plan-selector" id="plan-selector-box" onclick="event.stopPropagation()">
-            <select class="sw-select" id="selling-plan-dropdown" onchange="updateUI()">
+
+          <div class="sw-plan-selector" id="plan-selector-box">
+            <select class="sw-select" id="selling-plan-dropdown">
     `;
 
     plans.forEach((plan) => {
-      // Key matching logic must match app.subscriptions.jsx
       const key = `${plan.interval}_${plan.intervalCount}`;
       const rawId = shopifyIds[key];
-      
-      // Extract numeric ID from GID (gid://shopify/SellingPlan/12345 -> 12345)
-      const cleanId = rawId ? rawId.split('/').pop() : '';
-      
+      const cleanId = rawId ? String(rawId).split('/').pop() : '';
+
       if (cleanId) {
         const discount = parseFloat(plan.discount || 0);
-        const priceCents = productPriceCents * (1 - discount/100);
-        
+        const priceCents = productPriceCents * (1 - discount / 100);
+
         html += `<option value="${cleanId}" data-discount="${discount}" data-price="${priceCents}">
-          Every ${plan.intervalCount} ${plan.interval.toLowerCase()}(s) - Save ${discount}%
+          Every ${plan.intervalCount} ${String(plan.interval || '').toLowerCase()}(s) , Save ${discount}%
         </option>`;
       }
     });
@@ -164,100 +452,141 @@
       </div>
 
       <div class="sw-footer">
-        <button id="btn-add-to-cart" class="sw-btn" onclick="addToCart(event)">Add to Cart</button>
+        <button id="btn-add-to-cart" class="sw-btn" type="button">Add to Cart</button>
         <p id="sw-error-msg" class="sw-error"></p>
-      </div>`;
+      </div>
+    `;
 
     container.innerHTML = html;
+  }
 
-    // 3. Define Logic
+  function initLogic() {
     let currentMode = 'onetime';
     let currentPlanId = '';
 
-    window.selectOption = function(type) {
+    const rowOne = container.querySelector('#opt-row-onetime');
+    const rowSub = container.querySelector('#opt-row-sub');
+    const dropdownBox = container.querySelector('#plan-selector-box');
+    const dropdown = container.querySelector('#selling-plan-dropdown');
+    const btn = container.querySelector('#btn-add-to-cart');
+    const errorMsg = container.querySelector('#sw-error-msg');
+
+    function setSelected(type) {
       currentMode = type;
-      
-      // Visual updates
-      document.getElementById('opt-row-onetime').classList.toggle('selected', type === 'onetime');
-      document.getElementById('opt-row-sub').classList.toggle('selected', type === 'subscription');
-      
-      // Radio updates
-      document.querySelector(`input[value="${type}"]`).checked = true;
-      
-      // Dropdown visibility
-      const dropdown = document.getElementById('plan-selector-box');
-      dropdown.style.display = type === 'subscription' ? 'block' : 'none';
-      
+
+      if (rowOne) rowOne.classList.toggle('selected', type === 'onetime');
+      if (rowSub) rowSub.classList.toggle('selected', type === 'subscription');
+
+      const r = container.querySelector(`input[name="purchase_option"][value="${type}"]`);
+      if (r) r.checked = true;
+
+      if (dropdownBox) dropdownBox.style.display = type === 'subscription' ? 'block' : 'none';
       if (type === 'subscription') updateUI();
-    };
+    }
 
-    window.updateUI = function() {
-      const dropdownSelect = document.getElementById('selling-plan-dropdown');
-      if (!dropdownSelect) return;
-      
-      currentPlanId = dropdownSelect.value;
-      const selectedOption = dropdownSelect.options[dropdownSelect.selectedIndex];
-      
-      if (selectedOption) {
-        const price = parseFloat(selectedOption.getAttribute('data-price'));
-        const discount = selectedOption.getAttribute('data-discount');
-        
-        document.getElementById('sub-price-display').innerText = formatMoney(price);
-        document.getElementById('max-save-display').innerText = discount;
-      }
-    };
+    function updateUI() {
+      if (!dropdown) return;
 
-    window.addToCart = async function(e) {
-      if(e) e.preventDefault();
-      
-      const btn = document.getElementById('btn-add-to-cart');
-      const errorMsg = document.getElementById('sw-error-msg');
-      const originalText = btn.innerText;
-      
-      errorMsg.style.display = 'none';
-      btn.innerText = "Adding...";
-      btn.disabled = true;
+      currentPlanId = dropdown.value;
+      const opt = dropdown.options[dropdown.selectedIndex];
+      if (!opt) return;
 
-      // DYNAMIC VARIANT ID FETCH
+      const price = parseFloat(opt.getAttribute('data-price'));
+      const discount = opt.getAttribute('data-discount');
+
+      const priceEl = container.querySelector('#sub-price-display');
+      const discEl = container.querySelector('#max-save-display');
+
+      if (priceEl) priceEl.textContent = formatMoney(price);
+      if (discEl) discEl.textContent = discount;
+    }
+
+    async function addToCart() {
+      if (errorMsg) { errorMsg.style.display = 'none'; errorMsg.textContent = ''; }
+
+      const originalText = btn ? btn.textContent : 'Add to Cart';
+      if (btn) { btn.textContent = 'Adding...'; btn.disabled = true; }
+
       const variantId = getCurrentVariantId();
-      
-      const payload = { 
-        id: variantId, 
-        quantity: 1 
-      };
+      const payload = { id: variantId, quantity: 1 };
 
       if (currentMode === 'subscription' && currentPlanId) {
-        payload.selling_plan = parseInt(currentPlanId);
+        payload.selling_plan = parseInt(currentPlanId, 10);
       }
 
       try {
-        const res = await fetch(window.Shopify.routes.root + 'cart/add.js', {
+        const res = await fetch(rootPath() + 'cart/add.js', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ items: [payload] })
         });
 
-        if (res.ok) {
-          // Redirect to cart or open cart drawer depending on theme
-          window.location.href = '/cart';
-        } else {
-          const errData = await res.json();
-          throw new Error(errData.description || "Couldn't add item");
-        }
-      } catch (err) {
-        btn.innerText = originalText;
-        btn.disabled = false;
-        errorMsg.innerText = err.message;
-        errorMsg.style.display = 'block';
-      }
-    };
-    
-    // Initialize UI state
-    updateUI();
+        const addData = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(addData.description || addData.message || "Couldn't add item");
 
-  } catch (err) {
-    console.error("Widget load error:", err);
-    container.style.display = 'none';
+        const cart = await getCartJson();
+        if (cart) updateCartCountUI(cart);
+
+        if (cartAction === 'redirect') {
+          window.location.href = rootPath() + 'cart';
+          return;
+        }
+
+        await refreshThemeCartUi(cart);
+
+        const opened = openDrawerByCommonApis() || clickCartIconToOpenDrawer();
+        if (!opened) setTimeout(() => { openDrawerByCommonApis() || clickCartIconToOpenDrawer(); }, 80);
+
+        if (btn) {
+          btn.textContent = 'Added';
+          setTimeout(() => {
+            btn.textContent = originalText;
+            btn.disabled = false;
+          }, 900);
+        }
+
+      } catch (err) {
+        if (btn) { btn.textContent = originalText; btn.disabled = false; }
+        if (errorMsg) { errorMsg.textContent = err.message || 'Something went wrong'; errorMsg.style.display = 'block'; }
+      }
+    }
+
+    if (rowOne) rowOne.addEventListener('click', () => setSelected('onetime'));
+    if (rowSub) rowSub.addEventListener('click', () => setSelected('subscription'));
+    if (dropdownBox) dropdownBox.addEventListener('click', (e) => e.stopPropagation());
+
+    if (dropdown) dropdown.addEventListener('change', updateUI);
+    if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); addToCart(); });
+
+    updateUI();
   }
+
+  async function main() {
+    try {
+      const data = await fetchSubscriptionConfig();
+      if (!data || !data.subscription || !data.subscription.enabled) {
+        container.style.display = 'none';
+        return;
+      }
+
+      const sub = data.subscription;
+      const plans = sub.plansData || [];
+      const shopifyIds = sub.shopifyPlanIds || {};
+
+      if (!plans.length) {
+        container.style.display = 'none';
+        return;
+      }
+
+      buildWidget(plans, shopifyIds);
+      initLogic();
+
+    } catch (e) {
+      console.error('Widget load error:', e);
+      container.style.display = 'none';
+    }
+  }
+
+  main();
 })();
 </script>
