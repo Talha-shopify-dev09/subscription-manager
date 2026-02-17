@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLoaderData, useSubmit, useActionData, useRevalidator, Link } from "react-router";
+import { useLoaderData, useFetcher, useRevalidator, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getBillingInfo, canUseFeature } from "../helpers/billing.server";
 import {
@@ -354,8 +354,7 @@ async function generateShortId(shopDomain) {
 // 3. UI COMPONENT
 export default function BundlePage() {
   const { bundles, currencySymbol, billing, gated } = useLoaderData();
-  const actionData = useActionData();
-  const submit = useSubmit();
+  const fetcher = useFetcher();
   const shopify = useAppBridge();
   const revalidator = useRevalidator();
   
@@ -407,7 +406,7 @@ export default function BundlePage() {
     data.append("action", "create");
     data.append("title", title);
     data.append("products", JSON.stringify(selectedProducts)); 
-    submit(data, { method: "POST" });
+    fetcher.submit(data, { method: "POST" });
   };
 
   const handleEditOpen = (bundle) => {
@@ -441,46 +440,46 @@ export default function BundlePage() {
     data.append("id", editId);
     data.append("title", editTitle);
     data.append("products", JSON.stringify(editProducts));
-    submit(data, { method: "POST" });
+    fetcher.submit(data, { method: "POST" });
   };
 
   useEffect(() => {
-    if (!actionData) return;
+    if (!fetcher.data) return;
 
-    if (actionData?.error) {
+    if (fetcher.data?.error) {
       setLoading(false);
       setEditLoading(false);
       return;
     }
 
-    if (actionData?.success) {
+    if (fetcher.data?.success) {
       setLoading(false);
       setEditLoading(false);
       revalidator.revalidate();
     }
 
-    if (actionData?.created) {
+    if (fetcher.data?.created) {
       setTitle("");
       setSelectedProducts([]);
       shopify.toast.show("Bundle Saved!");
     }
 
-    if (actionData?.updated) {
+    if (fetcher.data?.updated) {
       shopify.toast.show("Bundle Updated!");
       handleEditClose();
     }
 
-    if (actionData?.deleted) {
+    if (fetcher.data?.deleted) {
       shopify.toast.show("Bundle Deleted!");
     }
-  }, [actionData, revalidator, shopify, handleEditClose]);
+  }, [fetcher.data, revalidator, shopify, handleEditClose]);
 
   const handleDelete = (id) => {
       if(confirm("Delete bundle and remove discount?")) {
         const data = new FormData();
         data.append("action", "delete");
         data.append("id", id);
-        submit(data, { method: "POST" });
+        fetcher.submit(data, { method: "POST" });
       }
   };
 
@@ -513,8 +512,8 @@ export default function BundlePage() {
     <AppProvider i18n={enTranslations}>
       <Page title="Fixed Bundles">
         <BlockStack gap="400">
-            {actionData?.error && <Banner tone="critical" title="Error">{actionData.error}</Banner>}
-            {actionData?.created && <Banner tone="success" title="Success">Bundle Saved!</Banner>}
+            {fetcher.data?.error && <Banner tone="critical" title="Error">{fetcher.data.error}</Banner>}
+            {fetcher.data?.created && <Banner tone="success" title="Success">Bundle Saved!</Banner>}
 
             <Layout>
             <Layout.Section>
