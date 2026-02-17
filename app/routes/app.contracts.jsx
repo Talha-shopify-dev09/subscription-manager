@@ -1,6 +1,7 @@
 import { useLoaderData, useFetcher, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getBillingInfo, canUseFeature } from "../helpers/billing.server";
+import db from "../db.server";
 import {
   AppProvider, Page, Layout, Card, IndexTable, Text, Badge, 
   Button, EmptyState, Box, Popover, ActionList, BlockStack
@@ -81,7 +82,9 @@ export async function loader({ request }) {
   );
 
   const jsonResponse = await response.json();
-  return Response.json({ contracts: jsonResponse.data?.subscriptionContracts?.edges || [], billing, gated: false });
+  const edges = jsonResponse.data?.subscriptionContracts?.edges || [];
+  const filtered = edges.filter(({ node }) => node?.status !== "CANCELLED");
+  return Response.json({ contracts: filtered, billing, gated: false });
 }
 
 // --- ACTION ---
@@ -94,7 +97,7 @@ export async function action({ request }) {
   const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const contractId = formData.get("contractId");
-  const intent = formData.get("intent"); // "pause" or "cancel"
+  const intent = formData.get("intent"); // "pause", "cancel", "delete"
   let newStatus;
 
   switch (intent) {
@@ -102,6 +105,7 @@ export async function action({ request }) {
       newStatus = "PAUSED";
       break;
     case "cancel":
+    case "delete":
       newStatus = "CANCELLED";
       break;
     default:
@@ -144,6 +148,15 @@ export async function action({ request }) {
     if (commitJson.errors || commitJson.data.subscriptionDraftCommit.userErrors.length > 0) {
       console.error("Error committing draft:", commitJson.errors || commitJson.data.subscriptionDraftCommit.userErrors);
       return new Response("Error committing draft", { status: 500 });
+    }
+
+    if (intent === "delete") {
+      try {
+        await db.transaction.deleteMany({ where: { contractId: String(contractId) } });
+        await db.contract.deleteMany({ where: { id: String(contractId) } });
+      } catch (dbError) {
+        console.error("Error deleting local contract records:", dbError);
+      }
     }
 
     return new Response("Contract updated successfully", { status: 200 });
@@ -210,6 +223,16 @@ export default function Contracts() {
                   content: 'Cancel',
                   onAction: () => handleAction(node.id, 'cancel'),
                   disabled: isLoading || node.status === 'CANCELLED',
+                  tone: 'critical',
+                },
+                {
+                  content: 'Delete Record',
+                  onAction: () => {
+                    if (confirm("This will cancel the subscription and remove it from your app records. Continue?")) {
+                      handleAction(node.id, 'delete');
+                    }
+                  },
+                  disabled: isLoading,
                   tone: 'critical',
                 },
               ]}
