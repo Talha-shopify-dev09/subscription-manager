@@ -1,4 +1,5 @@
-import { AppProvider, Page, Layout, Card, Text, BlockStack, Divider, Link } from "@shopify/polaris";
+import { AppProvider, Page, Layout, Card, Text, BlockStack, Divider, Link, Button } from "@shopify/polaris";
+import { Link as RouterLink } from "react-router";
 import enTranslations from "@shopify/polaris/locales/en.json";
 
 export default function HowToUse() {
@@ -66,6 +67,10 @@ export default function HowToUse() {
                   or contact{" "}
                   <Link url="mailto:socoba.apps@gmail.com">socoba.apps@gmail.com</Link>.
                 </Text>
+
+                <RouterLink to="/privacy">
+                  <Button>Privacy Policy</Button>
+                </RouterLink>
               </BlockStack>
             </Card>
           </Layout.Section>

@@ -292,64 +292,6 @@ export default function Index() {
               </InlineGrid>
             </Layout.Section>
 
-            {/* --- HOW TO USE GUIDE --- */}
-            <Layout.Section>
-              <Card>
-                <BlockStack gap="300">
-                  <Text as="h2" variant="headingMd">How to Use Socoba</Text>
-                  <BlockStack gap="200">
-                    <Text as="h3" variant="headingSm">1. Create Subscription Plans</Text>
-                    <Text as="p">
-                      Go to <strong>Subscription Manager</strong> and create plans for a product or an entire collection.
-                      Set delivery intervals and discounts, then save to publish the plans to Shopify.
-                    </Text>
-
-                    <Text as="h3" variant="headingSm">2. Manage Customer Contracts</Text>
-                    <Text as="p">
-                      Open <strong>Customer Contracts</strong> to view subscribers and pause or cancel contracts.
-                      Changes sync to Shopify immediately.
-                    </Text>
-
-                    <Text as="h3" variant="headingSm">3. Create Fixed Bundles</Text>
-                    <Text as="p">
-                      Use <strong>Fixed Bundles</strong> to combine products into one offer with custom bundle pricing.
-                      The app creates an automatic discount and stores bundle data for storefront display.
-                    </Text>
-
-                    <Divider />
-
-                    <Text as="h3" variant="headingSm">Add Widgets to Your Storefront</Text>
-                    <Text as="p">
-                      Use the Theme Editor to add the Socoba widget blocks to your storefront:
-                    </Text>
-                    <BlockStack gap="100">
-                      <Text as="p">
-                        1. In Shopify Admin, go to <strong>Online Store</strong> {"->"}{" "}
-                        <strong>Themes</strong> {"->"} <strong>Customize</strong>.
-                      </Text>
-                      <Text as="p">2. Select the page/template where you want to show the widget.</Text>
-                      <Text as="p">3. Click <strong>Add block</strong> and choose <strong>Socoba Bundle Block</strong>.</Text>
-                      <Text as="p">4. Enter the <strong>Bundle Short ID</strong> from your bundle list.</Text>
-                      <Text as="p">5. Save the theme.</Text>
-                    </BlockStack>
-
-                    <Text as="p" tone="subdued">
-                      Tip: You can add the bundle block to product pages or a landing page to promote bundles.
-                    </Text>
-
-                    <Text as="p" tone="subdued">
-                      Powered by Socoba. Visit{" "}
-                      <a href="https://socoba.co" target="_blank" rel="noreferrer">
-                        socoba.co
-                      </a>{" "}
-                      or contact{" "}
-                      <a href="mailto:socoba.apps@gmail.com">socoba.apps@gmail.com</a>.
-                    </Text>
-                  </BlockStack>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
-
             {/* --- BUNDLE MANAGER --- */}
             <Layout.Section>
               <Card>
@@ -365,30 +307,6 @@ export default function Index() {
               </Card>
             </Layout.Section>
             
-            {/* --- SIDEBAR SPECS --- */}
-            <Layout.Section variant="oneThird">
-              <BlockStack gap="500">
-                  <Card>
-                      <BlockStack gap="200">
-                          <Text as="h2" variant="headingMd">System Specs</Text>
-                          <BlockStack gap="200">
-                              <InlineGrid columns="1fr auto">
-                                  <Text as="span" fontWeight="bold">Framework</Text>
-                                  <Text as="span">React Router 7</Text>
-                              </InlineGrid>
-                              <InlineGrid columns="1fr auto">
-                                  <Text as="span" fontWeight="bold">Database</Text>
-                                  <Text as="span">PostgreSQL (Neon)</Text>
-                              </InlineGrid>
-                              <InlineGrid columns="1fr auto">
-                                  <Text as="span" fontWeight="bold">ORM</Text>
-                                  <Text as="span">Prisma</Text>
-                              </InlineGrid>
-                          </BlockStack>
-                      </BlockStack>
-                  </Card>
-              </BlockStack>
-            </Layout.Section>
           </Layout>
         </BlockStack>
       </Page>
