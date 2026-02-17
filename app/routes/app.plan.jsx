@@ -90,6 +90,7 @@ export default function PlanAndBilling() {
                   <fetcher.Form method="post">
                     <input type="hidden" name="basicFeatureMode" value="BUNDLE" />
                     <Button
+                      submit
                       variant={billing.basicFeatureMode === "BUNDLE" ? "primary" : "secondary"}
                       loading={fetcher.state === "submitting" && fetcher.formData?.get("basicFeatureMode") === "BUNDLE"}
                       disabled={!isBasic && !billing.isDevStore}
@@ -101,6 +102,7 @@ export default function PlanAndBilling() {
                   <fetcher.Form method="post">
                     <input type="hidden" name="basicFeatureMode" value="SUBSCRIPTION" />
                     <Button
+                      submit
                       variant={billing.basicFeatureMode === "SUBSCRIPTION" ? "primary" : "secondary"}
                       loading={fetcher.state === "submitting" && fetcher.formData?.get("basicFeatureMode") === "SUBSCRIPTION"}
                       disabled={!isBasic && !billing.isDevStore}
