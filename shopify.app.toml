@@ -2,7 +2,7 @@
 
 client_id = "0ff88f0c1bebc82bb6062e9a8a30c6bf"
 name = "Socoba Bundle and Subscription"
-application_url = "https://socoba-bundles-subscription.onrender.com"
+application_url = "https://apps.socoba.co"
 embedded = true
 
 [build]
@@ -39,13 +39,13 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://socoba-bundles-subscription.onrender.com/auth/callback",
-  "https://socoba-bundles-subscription.onrender.com/auth/shopify/callback",
-  "https://socoba-bundles-subscription.onrender.com/api/auth/callback"
+  "https://apps.socoba.co/auth/callback",
+  "https://apps.socoba.co/auth/shopify/callback",
+  "https://apps.socoba.co/api/auth/callback"
 ]
 
 [app_proxy]
 # This makes your Customer Portal live at: store.com/apps/subscription-manager/portal
-url = "https://socoba-bundles-subscription.onrender.com"
+url = "https://apps.socoba.co"
 subpath = "subscription-manager"
 prefix = "apps"
