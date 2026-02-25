@@ -52,7 +52,8 @@ export const action = async ({ request }) => {
       const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
 
       // Construct customerGid for the GraphQL query
-      const customerGid = customer_id ? `gid://shopify/Customer/${customer_id}` : null;\n      let customerEmail = null;
+      const customerGid = customer_id ? `gid://shopify/Customer/${customer_id}` : null;
+      let customerEmail = null;
 
       if (customerGid && admin) {
         try {
