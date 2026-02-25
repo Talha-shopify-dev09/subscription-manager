@@ -129,6 +129,7 @@ model Transaction {
   shop         String
   contractId   String
   contract     Contract @relation(fields: [contractId], references: [id])
+  orderId      String?
   amount       Decimal
   currencyCode String
   
@@ -137,6 +138,7 @@ model Transaction {
   
   @@index([shop])
   @@index([contractId])
+  @@unique([shop, orderId])
 }
 
 // --- BUNDLE SALE MODEL ---
@@ -156,6 +158,7 @@ model BundleSale {
   @@index([shop])
   @@index([orderId])
   @@index([bundleId])
+  @@unique([shop, orderId, bundleId])
 }
 
 // --- SHOP SETTINGS MODEL ---

@@ -52,8 +52,7 @@ export const action = async ({ request }) => {
       const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
 
       // Construct customerGid for the GraphQL query
-      const customerGid = customer_id ? `gid://shopify/Customer/${customer_id}` : null;
-      let customerEmail = null;
+      const customerGid = customer_id ? `gid://shopify/Customer/${customer_id}` : null;\n      let customerEmail = null;
 
       if (customerGid && admin) {
         try {
@@ -163,27 +162,38 @@ export const action = async ({ request }) => {
         });
         console.log(`🔄 Updated Contract ${id} to ${status}`);
 
-        const customerEmail = updatedContract.customerEmail;
-        const customerFirstName = updatedContract.customerName?.split(' ')[0];
+        let customerEmail = updatedContract.customerEmail;
+        let customerFirstName = updatedContract.customerName?.split(' ')[0];
+
+        if (!customerEmail) {
+          const existingContract = await db.contract.findFirst({
+            where: { id: contractId, shop },
+            select: { customerEmail: true, customerName: true },
+          });
+          customerEmail = existingContract?.customerEmail || null;
+          if (!customerFirstName && existingContract?.customerName) {
+            customerFirstName = existingContract.customerName.split(' ')[0];
+          }
+        }
 
         console.log(`Debug: Attempting to send email for contract ${contractId}. Customer Email: ${customerEmail}, First Name: ${customerFirstName}`);
 
         if (customerEmail) {
           if (status.toUpperCase() === 'PAUSED') {
             await sendEmail({
-                to: customerEmail,
-                senderName: senderLabel,
-                subject: `[${shop}] Your Subscription Has Been Paused`,
-                text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully paused. You can resume it anytime from your portal.\n\nManage your subscriptions here: ${portalBaseUrl}`,
-                html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully paused. You can resume it anytime from your portal.</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+              to: customerEmail,
+              senderName: senderLabel,
+              subject: `[${shop}] Your Subscription Has Been Paused`,
+              text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully paused. You can resume it anytime from your portal.\n\nManage your subscriptions here: ${portalBaseUrl}`,
+              html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully paused. You can resume it anytime from your portal.</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
             });
           } else if (status.toUpperCase() === 'CANCELLED') {
             await sendEmail({
-                to: customerEmail,
-                senderName: senderLabel,
-                subject: `[${shop}] Your Subscription Has Been Cancelled`,
-                text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully cancelled. We're sorry to see you go!\n\nManage your subscriptions here: ${portalBaseUrl}`,
-                html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully cancelled. We're sorry to see you go!</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+              to: customerEmail,
+              senderName: senderLabel,
+              subject: `[${shop}] Your Subscription Has Been Cancelled`,
+              text: `Hi ${customerFirstName || 'there'},\n\nYour subscription for contract ${contractId} has been successfully cancelled. We're sorry to see you go!\n\nManage your subscriptions here: ${portalBaseUrl}`,
+              html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your subscription for contract <b>${contractId}</b> has been successfully cancelled. We're sorry to see you go!</p><p>Manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
             });
           }
         }
@@ -200,11 +210,11 @@ export const action = async ({ request }) => {
         console.warn("Received SUBSCRIPTION_BILLING_ATTEMPTS_SUCCESS with missing data.");
         break;
       }
-      
+
       const amount = completedOrder.totalPriceSet.shopMoney.amount;
       const currency = completedOrder.totalPriceSet.shopMoney.currencyCode;
-      const customerEmail = customer?.email;
-      const customerFirstName = customer?.firstName;
+      let customerEmail = customer?.email;
+      let customerFirstName = customer?.firstName;
 
       try {
         await db.contract.upsert({
@@ -218,24 +228,45 @@ export const action = async ({ request }) => {
           },
         });
 
-        await db.transaction.create({
-          data: {
-            shop: shop,
-            contractId: String(subscriptionContractId),
-            amount: parseFloat(amount),
-            currencyCode: currency
+        if (!customerEmail) {
+          const existingContract = await db.contract.findFirst({
+            where: { id: String(subscriptionContractId), shop },
+            select: { customerEmail: true, customerName: true },
+          });
+          customerEmail = existingContract?.customerEmail || null;
+          if (!customerFirstName && existingContract?.customerName) {
+            customerFirstName = existingContract.customerName.split(' ')[0];
           }
-        });
-        console.log(`💰 Recorded transaction of ${amount} ${currency} for contract ${subscriptionContractId}`);
+        }
+
+        const orderId = completedOrder?.id || completedOrder?.name || null;
+        const existingTxn = orderId
+          ? await db.transaction.findFirst({ where: { shop, orderId } })
+          : null;
+
+        if (!existingTxn) {
+          await db.transaction.create({
+            data: {
+              shop: shop,
+              contractId: String(subscriptionContractId),
+              orderId,
+              amount: parseFloat(amount),
+              currencyCode: currency
+            }
+          });
+          console.log(`💰 Recorded transaction of ${amount} ${currency} for contract ${subscriptionContractId}`);
+        } else {
+          console.log(`💰 Skipped duplicate transaction for order ${orderId}`);
+        }
 
         if (customerEmail) {
-            await sendEmail({
-                to: customerEmail,
-                senderName: senderLabel,
-                subject: `[${shop}] Your Subscription Payment Was Successful!`,
-                text: `Hi ${customerFirstName || 'there'},\n\nYour recent subscription payment of ${amount} ${currency} for order ${completedOrder.name} was successful. Thank you for your continued subscription!\n\nYou can manage your subscriptions here: ${portalBaseUrl}`,
-                html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your recent subscription payment of <b>${amount} ${currency}</b> for order ${completedOrder.name} was successful. Thank you for your continued subscription!</p><p>You can manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
-            });
+          await sendEmail({
+            to: customerEmail,
+            senderName: senderLabel,
+            subject: `[${shop}] Your Subscription Payment Was Successful!`,
+            text: `Hi ${customerFirstName || 'there'},\n\nYour recent subscription payment of ${amount} ${currency} for order ${completedOrder.name} was successful. Thank you for your continued subscription!\n\nYou can manage your subscriptions here: ${portalBaseUrl}`,
+            html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your recent subscription payment of <b>${amount} ${currency}</b> for order ${completedOrder.name} was successful. Thank you for your continued subscription!</p><p>You can manage your subscriptions here: <a href="${portalBaseUrl}">${portalBaseUrl}</a></p>`
+          });
         }
 
       } catch (error) {
@@ -251,10 +282,10 @@ export const action = async ({ request }) => {
     // --- 4.1. HANDLE FAILED BILLING ATTEMPTS ---
     case "SUBSCRIPTION_BILLING_ATTEMPTS_FAILURE": {
       const { subscriptionContractId, customer, errorMessage } = payload; // Assuming errorMessage might be in payload
-      
-        let customerEmail = customer?.email;
-        let customerFirstName = customer?.firstName;
-        const failureReason = errorMessage || "payment failed"; // Default message if no specific error
+
+      let customerEmail = customer?.email;
+      let customerFirstName = customer?.firstName;
+      const failureReason = errorMessage || "payment failed"; // Default message if no specific error
 
       try {
         await db.contract.upsert({
@@ -271,25 +302,25 @@ export const action = async ({ request }) => {
         });
         console.log(`❌ Updated Contract ${subscriptionContractId} status to FAILED due to billing attempt failure.`);
 
-          if (!customerEmail) {
-            const existingContract = await db.contract.findFirst({
-              where: { id: String(subscriptionContractId), shop },
-              select: { customerEmail: true, customerName: true },
-            });
-            customerEmail = existingContract?.customerEmail || null;
-            if (!customerFirstName && existingContract?.customerName) {
-              customerFirstName = existingContract.customerName.split(' ')[0];
-            }
+        if (!customerEmail) {
+          const existingContract = await db.contract.findFirst({
+            where: { id: String(subscriptionContractId), shop },
+            select: { customerEmail: true, customerName: true },
+          });
+          customerEmail = existingContract?.customerEmail || null;
+          if (!customerFirstName && existingContract?.customerName) {
+            customerFirstName = existingContract.customerName.split(' ')[0];
           }
+        }
 
-          if (customerEmail) {
-            await sendEmail({
-                to: customerEmail,
-                senderName: senderLabel,
-                subject: `[${shop}] Important: Your Subscription Payment Failed`,
-                text: `Hi ${customerFirstName || 'there'},\n\nYour recent subscription payment for contract ${subscriptionContractId} failed due to: ${failureReason}. Please update your payment method to avoid interruption of service.\n\nYou can update your payment method here: ${portalBaseUrl}`,
-                html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your recent subscription payment for contract <b>${subscriptionContractId}</b> failed due to: <b>${failureReason}</b>. Please update your payment method to avoid interruption of service.</p><p>You can update your payment method here: <a href="${portalBaseUrl}">Update Payment Method</a></p>`
-            });
+        if (customerEmail) {
+          await sendEmail({
+            to: customerEmail,
+            senderName: senderLabel,
+            subject: `[${shop}] Important: Your Subscription Payment Failed`,
+            text: `Hi ${customerFirstName || 'there'},\n\nYour recent subscription payment for contract ${subscriptionContractId} failed due to: ${failureReason}. Please update your payment method to avoid interruption of service.\n\nYou can update your payment method here: ${portalBaseUrl}`,
+            html: `<p>Hi ${customerFirstName || 'there'},</p><p>Your recent subscription payment for contract <b>${subscriptionContractId}</b> failed due to: <b>${failureReason}</b>. Please update your payment method to avoid interruption of service.</p><p>You can update your payment method here: <a href="${portalBaseUrl}">Update Payment Method</a></p>`
+          });
         }
 
       } catch (error) {
@@ -302,11 +333,10 @@ export const action = async ({ request }) => {
       break;
     }
 
-
     // --- 5. HANDLE NEW ORDERS (for bundle tracking) ---
     case "ORDERS_CREATE": {
       const { id: orderId, customer: customerData, total_price, currency, discount_applications } = payload;
-      
+
       console.log("ORDERS_CREATE Webhook Payload (discount_applications):", JSON.stringify(discount_applications, null, 2));
 
       try {
@@ -323,18 +353,27 @@ export const action = async ({ request }) => {
         if (appliedBundleDiscount) {
           const matchedBundle = bundles.find(b => appliedBundleDiscount.title.includes(b.title));
           if (matchedBundle) {
-            await db.bundleSale.create({
-              data: {
-                shop: shop,
-                orderId: String(orderId),
-                bundleId: matchedBundle.id,
-                bundleTitle: matchedBundle.title,
-                totalAmount: parseFloat(total_price),
-                currencyCode: currency,
-                customerId: String(customerData?.id) || null,
-              }
+            const existingSale = await db.bundleSale.findFirst({
+              where: { shop, orderId: String(orderId), bundleId: matchedBundle.id },
+              select: { id: true },
             });
-            console.log(`🎁 Recorded bundle sale for Order ${orderId} (Bundle: ${matchedBundle.title})`);
+
+            if (!existingSale) {
+              await db.bundleSale.create({
+                data: {
+                  shop: shop,
+                  orderId: String(orderId),
+                  bundleId: matchedBundle.id,
+                  bundleTitle: matchedBundle.title,
+                  totalAmount: parseFloat(total_price),
+                  currencyCode: currency,
+                  customerId: String(customerData?.id) || null,
+                }
+              });
+              console.log(`🎁 Recorded bundle sale for Order ${orderId} (Bundle: ${matchedBundle.title})`);
+            } else {
+              console.log(`🎁 Skipped duplicate bundle sale for Order ${orderId} (Bundle: ${matchedBundle.title})`);
+            }
           } else {
             console.log(`❌ No matching bundle found for applied automatic discount: ${appliedBundleDiscount.shopify_discount_id}`);
           }
@@ -419,3 +458,5 @@ export const action = async ({ request }) => {
   // Always return a 200 OK Response to satisfy Shopify's delivery check
   return new Response();
 };
+
+

@@ -78,11 +78,34 @@ export async function action({ request }) {
     if (!canUseFeature(billing, "SUBSCRIPTION")) {
       return { error: "Subscriptions are not available on your current plan." };
     }
+    const url = new URL(request.url);
+    const customerId = url.searchParams.get("logged_in_customer_id");
+    if (!customerId) {
+      return { error: "You must be logged in to manage subscriptions." };
+    }
     const formData = await request.formData();
     const contractId = formData.get("contractId");
 
     if (!contractId) {
       return { error: "No Contract ID provided" };
+    }
+
+    // Security: verify the contract belongs to this customer
+    const verifyResponse = await admin.graphql(
+      `#graphql
+      query VerifyContractCustomer($id: ID!) {
+        subscriptionContract(id: $id) {
+          id
+          customer { id }
+        }
+      }`,
+      { variables: { id: contractId } }
+    );
+    const verifyJson = await verifyResponse.json();
+    const contractCustomerId = verifyJson.data?.subscriptionContract?.customer?.id || null;
+    const expectedCustomerId = `gid://shopify/Customer/${customerId}`;
+    if (!contractCustomerId || contractCustomerId !== expectedCustomerId) {
+      return { error: "You are not authorized to manage this subscription." };
     }
 
     const response = await admin.graphql(
