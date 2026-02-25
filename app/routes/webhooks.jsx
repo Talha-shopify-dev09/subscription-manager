@@ -252,9 +252,9 @@ export const action = async ({ request }) => {
     case "SUBSCRIPTION_BILLING_ATTEMPTS_FAILURE": {
       const { subscriptionContractId, customer, errorMessage } = payload; // Assuming errorMessage might be in payload
       
-      const customerEmail = customer?.email;
-      const customerFirstName = customer?.firstName;
-      const failureReason = errorMessage || "payment failed"; // Default message if no specific error
+        let customerEmail = customer?.email;
+        let customerFirstName = customer?.firstName;
+        const failureReason = errorMessage || "payment failed"; // Default message if no specific error
 
       try {
         await db.contract.upsert({
@@ -271,7 +271,18 @@ export const action = async ({ request }) => {
         });
         console.log(`❌ Updated Contract ${subscriptionContractId} status to FAILED due to billing attempt failure.`);
 
-        if (customerEmail) {
+          if (!customerEmail) {
+            const existingContract = await db.contract.findFirst({
+              where: { id: String(subscriptionContractId), shop },
+              select: { customerEmail: true, customerName: true },
+            });
+            customerEmail = existingContract?.customerEmail || null;
+            if (!customerFirstName && existingContract?.customerName) {
+              customerFirstName = existingContract.customerName.split(' ')[0];
+            }
+          }
+
+          if (customerEmail) {
             await sendEmail({
                 to: customerEmail,
                 senderName: senderLabel,

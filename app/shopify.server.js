@@ -26,6 +26,18 @@ const shopify = shopifyApp({
       deliveryMethod: "http",
       callbackUrl: "/webhooks",
     },
+    SUBSCRIPTION_BILLING_ATTEMPTS_SUCCESS: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks",
+    },
+    SUBSCRIPTION_BILLING_ATTEMPTS_FAILURE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks",
+    },
+    ORDERS_CREATE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks",
+    },
     APP_UNINSTALLED: {
       deliveryMethod: "http",
       callbackUrl: "/webhooks",
