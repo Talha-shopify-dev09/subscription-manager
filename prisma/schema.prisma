@@ -104,6 +104,8 @@ model Contract {
   customerEmail   String?
   status          ContractStatus @default(ACTIVE)
   nextBillingDate DateTime?
+  lastReminderFor DateTime?
+  lastReminderSentAt DateTime?
   recurringPrice  Decimal?       // Price for each recurring payment
   currencyCode    String         @default("USD")
   
