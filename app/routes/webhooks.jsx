@@ -2,6 +2,29 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { sendEmail } from "../email.server"; // Import the email sending utility
 
+function pickFirstLine(payload) {
+  if (!payload) return null;
+  if (Array.isArray(payload.lines)) return payload.lines[0] || null;
+  if (Array.isArray(payload.lines?.edges)) return payload.lines.edges[0]?.node || null;
+  if (Array.isArray(payload.lines?.nodes)) return payload.lines.nodes[0] || null;
+  return null;
+}
+
+function getLineProductId(payload) {
+  const line = pickFirstLine(payload);
+  return line?.productId || line?.product?.id || line?.product?.gid || null;
+}
+
+function getLineRecurringPrice(payload) {
+  const line = pickFirstLine(payload);
+  return (
+    line?.pricingPolicy?.price?.amount ||
+    line?.pricingPolicy?.fixed?.amount ||
+    line?.pricingPolicy?.adjustmentValue?.amount ||
+    null
+  );
+}
+
 async function cleanupShopData(shop) {
   await db.session.deleteMany({ where: { shop } });
   await db.subscription.deleteMany({ where: { shop } });
@@ -45,11 +68,14 @@ export const action = async ({ request }) => {
   switch (topic) {
     // --- 2. HANDLE NEW SUBSCRIPTION CONTRACTS ---
     case "SUBSCRIPTION_CONTRACTS_CREATE": {
-      const { id, status, nextBillingDate, customer_id, currencyCode, lines } = payload;
+      const { id, status, nextBillingDate, customer_id, currencyCode } = payload;
       const contractId = String(id);
 
-      const productGid = lines?.[0]?.productId;
-      const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
+      const productGid = getLineProductId(payload);
+      const recurringPrice = getLineRecurringPrice(payload);
+      if (!productGid) {
+        console.warn(`Webhook ${topic}: missing productId for contract ${contractId}`);
+      }
 
       // Construct customerGid for the GraphQL query
       const customerGid = customer_id ? `gid://shopify/Customer/${customer_id}` : null;
@@ -139,7 +165,7 @@ export const action = async ({ request }) => {
     case "SUBSCRIPTION_CONTRACTS_UPDATE": {
       const { id, status, nextBillingDate, customer } = payload; // Added customer to destructure
       const contractId = String(id);
-      const recurringPrice = payload.lines?.[0]?.pricingPolicy?.price?.amount;
+      const recurringPrice = getLineRecurringPrice(payload);
       try {
         const updatedContract = await db.contract.upsert({
           where: { id: contractId },
