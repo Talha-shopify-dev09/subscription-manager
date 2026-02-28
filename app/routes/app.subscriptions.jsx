@@ -24,7 +24,7 @@ export async function loader({ request }) {
 
   const response = await admin.graphql(
     `#graphql
-      query {
+      query SubscriptionsProducts {
         products(first: 50) { edges { node { id title priceRangeV2 { minVariantPrice { amount } } } } }
       }
     `

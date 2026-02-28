@@ -16,7 +16,7 @@ async function getShopName(admin) {
   try {
     const response = await admin.graphql(
       `#graphql
-      query {
+      query WebhookShopName {
         shop {
           name
         }

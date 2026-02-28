@@ -21,7 +21,7 @@ export async function loader({ request }) {
   
   const shopResponse = await admin.graphql(
     `#graphql
-    query {
+    query BundlesShopInfo {
       shop {
         id
         currencyFormats {

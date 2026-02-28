@@ -110,13 +110,13 @@ export async function action({ request }) {
 
     const response = await admin.graphql(
       `#graphql
-      mutation cancelContract($id: ID!) {
-        subscriptionContractCancel(contractId: $id) {
+      mutation cancelContract($subscriptionContractId: ID!) {
+        subscriptionContractCancel(subscriptionContractId: $subscriptionContractId) {
           contract { id status }
           userErrors { field message }
         }
       }`,
-      { variables: { id: contractId } }
+      { variables: { subscriptionContractId: contractId } }
     );
     
     const responseJson = await response.json();
