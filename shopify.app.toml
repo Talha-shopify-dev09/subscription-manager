@@ -9,7 +9,7 @@ embedded = true
 automatically_update_urls_on_dev = true
 
 [webhooks]
-api_version = "2025-10" # Using the latest stable version
+api_version = "2025-07" # Using the latest stable version
 
   # App lifecycle and Subscription tracking
   [[webhooks.subscriptions]]
